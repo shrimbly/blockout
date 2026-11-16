@@ -60,6 +60,9 @@ try {
   let pt = await towerPt();
   await page.mouse.click(pt.x, pt.y);
   ok(await page.evaluate(() => window.canvas.store.state.selection) === null, 'plain click does not select');
+  ok(await page.isVisible('[data-hint=click-aims]'), 'a plain click on an object shows the one-time "⌘/Ctrl-click to select" hint');
+  await page.click('[data-hint=click-aims] >> text=Got it');
+  ok(await page.evaluate(() => localStorage.getItem('cc-hint-click-aims')) === '1' && !(await page.isVisible('[data-hint]')), '"Got it" closes the hint for good');
   await page.waitForTimeout(500); // the click aimed the camera at the tower, so it moved on screen
   pt = await towerPt();
   await page.keyboard.down('Control'); await page.mouse.click(pt.x, pt.y); await page.keyboard.up('Control');
@@ -524,6 +527,55 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
   cli('shot-rm', 'shot-1');
   ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
+
+  // --- first run on an empty scene: start card, framing the first build, hints; then .glb models ---
+  {
+  cli('new');
+  const newTab = await browser.newPage({ viewport: { width: 1280, height: 800 } }); // new context: no hints seen yet
+  newTab.on('pageerror', (e) => errors.push(e.message));
+  await newTab.goto(`http://127.0.0.1:${PORT}`);
+  await newTab.waitForFunction(() => window.canvas?.store.doc);
+  ok(await newTab.isVisible('.start-card'), 'an empty scene shows the start card');
+  await newTab.click('.start-card .chat-starter >> nth=1');
+  ok(/orbit around a car/.test(await newTab.inputValue('.chat-input')), 'a starter on the card fills the chat box');
+  const before = await newTab.evaluate(() => window.canvas.viewport.freeCam.position.toArray());
+  cli('add', 'box', '--name', 'shed', '--size', '3,2.5,3', '--pos', '20,0,-10');
+  await newTab.waitForSelector('[data-hint=first-build]');
+  ok(!(await newTab.isVisible('.start-card')), 'the start card goes away with the newTab object');
+  const after = await newTab.evaluate(() => window.canvas.viewport.freeOrbit.target.toArray());
+  ok(Math.abs(after[0] - 20) < 0.5 && Math.abs(after[2] + 10) < 0.5 && before.join() !== after.join(), 'the agent\'s newTab build is framed in free view');
+  await newTab.click('[data-hint=first-build] >> text=View shot');
+  ok(await newTab.evaluate(() => window.canvas.store.state.view) === 'shot', 'the first-build hint\'s View shot button switches to the shot');
+  ok(await newTab.isVisible('[data-hint=shot-view]'), 'the newTab time in Shot view shows the shot hint');
+  await newTab.click('[data-hint=shot-view] >> text=Got it');
+  await newTab.evaluate(() => window.canvas.store.set({ view: 'free' }));
+
+  const { boxGlb } = await import('./glb-fixture.mjs');
+  const glbPath = path.join(dir, 'Old Truck.glb');
+  fs.writeFileSync(glbPath, boxGlb({ w: 250, h: 300, d: 600, translation: [40, 0, 0] })); // authored in cm
+  const added = cli('add', 'model', glbPath, '--h', '3', '--pos', '-4,0,0');
+  ok(/^old-truck\nmodel old-truck-[0-9a-f]{8}\.glb: 250 × 300 × 600 m as authored \(w × h × d\), drawn 2\.5 × 3 × 6 m/.test(added), `add model uploads the .glb and reports its size (${added.split('\n')[1]})`);
+  ok(/old-truck-[0-9a-f]{8}\.glb\s+250 × 300 × 600 m as authored, 12 triangles, .* used by old-truck/.test(cli('models')), 'canvas models lists the file, its size and who uses it');
+  ok(/old-truck \(model file=old-truck-\w+\.glb h=3\).*\[model 250 × 300 × 600 m as authored, drawn 2\.5 × 3 × 6 m\]/.test(cli('ls')), 'ls shows a model\'s authored and drawn size');
+  await newTab.waitForFunction(() => window.canvas.viewport.meshes.get('old-truck')?.mesh.geometry.attributes.position?.count === 36);
+  const bb = await newTab.evaluate(() => { const g = window.canvas.viewport.meshes.get('old-truck').mesh.geometry; g.computeBoundingBox(); return [g.boundingBox.min.toArray(), g.boundingBox.max.toArray()]; });
+  ok(Math.abs(bb[1][1] - 3) < 1e-3 && Math.abs(bb[0][1]) < 1e-3 && Math.abs(bb[0][0] + 1.25) < 1e-3, 'the tab draws the model h tall with its pivot at the bottom centre');
+  const snapModel = cli('snapshot', '--view', 'free');
+  ok(fs.existsSync(snapModel), 'snapshot renders a scene with a model');
+  failed = false; try { cli('add', 'model', 'nope.glb'); } catch { failed = true; }
+  ok(failed, 'a model file that is neither local nor in models/ is rejected');
+  // drop a .glb onto the viewport: uploaded and added where it lands, then selected
+  await newTab.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer(); dt.items.add(new File([bytes], 'crate.glb'));
+    const r = window.canvas.viewport.canvas.getBoundingClientRect();
+    window.canvas.viewport.canvas.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, clientX: r.left + r.width / 2, clientY: r.top + r.height * 0.85, bubbles: true, cancelable: true }));
+  }, boxGlb({ w: 1, h: 1, d: 1 }).toString('base64'));
+  await newTab.waitForFunction(() => window.canvas.store.state.selection === 'crate', null, { timeout: 5000 });
+  const crate = JSON.parse(cli('doc')).objects.find((o) => o.id === 'crate');
+  ok(crate.type === 'model' && /^crate-[0-9a-f]{8}\.glb$/.test(crate.params.file) && crate.position[1] === 0, 'dropping a .glb on the canvas imports it on the ground and selects it');
+  await newTab.close();
+  }
 
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {

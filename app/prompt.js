@@ -410,5 +410,7 @@ export function mountPrompt(root, { viewport, corner }) {
   refresh();
   setOpen(open);
 
-  return { focus: () => { if (!open) setOpen(true); input.focus(); }, input, setOpen, toggleBtn };
+  // put text in the message box (a starter prompt), ready to edit or send
+  const fill = (text) => { if (!open) setOpen(true); input.value = text; input.dispatchEvent(new Event('input')); input.focus(); };
+  return { focus: () => { if (!open) setOpen(true); input.focus(); }, fill, input, setOpen, toggleBtn };
 }

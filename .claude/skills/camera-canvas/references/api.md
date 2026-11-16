@@ -85,6 +85,7 @@ shot's timeline without switching (CLI: `--shot <id>`). `anim.*` times are shot 
 | stairs | w 1, h 1, d 1.5, steps 6 (rise toward −z) | w,h,d |
 | arch | w 2, h 2.5, d 0.5, t 0.4 (doorway, wall thickness t) | w,h,d |
 | person | body male\|female\|child (default male), h (default 1.8 / 1.65 / 1.3 by body); faces +z | h |
+| model | file (a `.glb` name in the scene's `models/`, from `POST /api/model`; required), h (scale to this height; unset: as authored). Drawn in clay, pivot at the bottom centre; unnamed models take the file's name | h |
 
 ### Eases
 
@@ -117,6 +118,9 @@ shot A's last (hold) key.
 (every shot in order in one mp4); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
 
+`canvas add model <file.glb> [--h m] [--pos x,y,z]` uploads a model and adds it, printing its size as authored;
+`canvas set <id> --file <file.glb>` swaps the file; `canvas models` lists the model files with sizes and users.
+
 `canvas audio <file> [--offset s] [--volume v] [--mute on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
 
@@ -143,6 +147,8 @@ shot A's last (hold) key.
 | `POST /api/save` | `{ name?, overwrite? }` | `{ name, path }`; 409 if it exists |
 | `POST /api/load` | `{ name }` | `{ name, objects, keys }` (undoable) |
 | `POST /api/audio?name=song.mp3` | raw audio bytes | `{ file, name, path, url }`: stored in the scene folder's `audio/`; then set it with the `audio` op |
+| `POST /api/model?name=car.glb` | raw `.glb` bytes | `{ file, name, path, url, size: [w,h,d], min, max, meshes, triangles, compressed }`: stored in the scene folder's `models/`; then add it with `{ op: 'add', type: 'model', file }` |
+| `GET /api/models` | | `{ dir, models: [{ file, bytes, used: [ids], size, triangles, … }] }` |
 | `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, export, audio) | `{ ok, result }` |
 | `GET /api/prompt/next?wait=600` | long poll | `{ prompt }` or `{ prompt: null }` on timeout |
 | `POST /api/say` | `{ text, reply?, done? }` | |

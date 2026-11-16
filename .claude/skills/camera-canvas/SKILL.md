@@ -70,8 +70,8 @@ Most of the time goes into round trips, so do as much per step as you can:
   so `--pos x,0,z` stands it on the ground. Stack by adding the height of what is below.
 - Rotations are degrees (`--rot 0,45,0` turns around the vertical axis). `--scale` multiplies size.
 - Types: `box(w,h,d) sphere(r) cylinder(r,h,rTop) cone(r,h) pyramid(w,h,d) capsule(r,h) torus(r,tube)
-  plane(w,d) ramp(w,h,d) stairs(w,h,d,steps) arch(w,h,d,t) person(h,body,detail)`. `--size a,b,c` fills the
-  main params in that order.
+  plane(w,d) ramp(w,h,d) stairs(w,h,d,steps) arch(w,h,d,t) person(h,body,detail) model(file,h)`. `--size a,b,c`
+  fills the main params in that order.
 - Use `person` (faces +z) for people and as a scale reference. `--body male|female|child` picks the
   body (default male); height defaults to 1.8 / 1.65 / 1.3 m, or set `--h`. Mix bodies in crowds and
   street scenes rather than repeating one.
@@ -79,6 +79,13 @@ Most of the time goes into round trips, so do as much per step as you can:
   drawn-on face, `high` a jointed artist's mannequin. Keep low unless the user asks for more
   detailed, realistic or posable people; then switch the whole scene with `canvas env --people high`,
   or one person with `--detail high` (`--detail null` follows the scene again).
+- Imported models: when the user gives you a `.glb` (a car, a hero prop, a building), run
+  `canvas add model path/to/car.glb --pos x,0,z`. It is copied into the scene's `models/`, drawn in clay like
+  everything else (textures dropped) with its pivot at the bottom centre, and the command prints its size as
+  authored. glTF is in metres, but many files are not: if the size is implausible (a 120 m car), pass
+  `--h <real height>` (or `canvas set <id> --h 1.5` later). `canvas models` lists the files, and `canvas ls`
+  shows each model's authored and drawn size. The user can also drop a `.glb` on the canvas; it lands where
+  they dropped it. Only single-file `.glb` is supported (convert `.gltf`, `.fbx` or `.obj` first).
 - Give objects meaningful names (`--name hero-car`); the name becomes the id.
 - Keep blockouts grey (default `#d8d4cc`). Use colour only to tell the subject apart from the set
   (one or two muted colours), because the video model reads colour and shape.

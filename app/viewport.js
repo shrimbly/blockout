@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { buildGeometry } from './geometry.js';
+import { buildGeometry, loadModel, modelState, modelError } from './geometry.js';
+import { toast } from './ui/kit.js';
 import { isCut, sampleCamera, sampleObject } from '/core/curves.js';
 import { store } from './store.js';
 
@@ -171,11 +172,23 @@ export class Viewport {
       // at the clicked point: the object surface, else the ground.
       if (e.ctrlKey || e.metaKey) { store.set({ selection: hit ? hit.object.userData.id : null }); return; }
       const point = hit ? hit.point : ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
-      if (point && point.distanceTo(this.activeCam.position) < 1500) this.aimAt(point);
+      if (point && point.distanceTo(this.activeCam.position) < 1500) { this.aimAt(point); store.emit('aimed', { object: hit ? hit.object.userData.id : null }); }
     });
     // On macOS Ctrl-click also fires a context menu: suppress it over the canvas.
     this.canvas.addEventListener('contextmenu', (e) => { if (e.ctrlKey) e.preventDefault(); });
     this.canvas.addEventListener('dblclick', () => { if (store.state.selection) this.frame(store.state.selection); });
+  }
+
+  /** The world point under a screen position: an object's surface, else the ground (null: sky).
+   *  tops: only an upward-facing surface counts (a table top, not a wall), else the ground behind it. */
+  pointAt(clientX, clientY, { tops = false } = {}) {
+    const rect = this.canvas.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), this.activeCam);
+    let hit = ray.intersectObjects([...this.meshes.values()].map((m) => m.mesh), false)[0];
+    if (hit && tops && !(hit.face && hit.face.normal.clone().transformDirection(hit.object.matrixWorld).y > 0.7)) hit = null;
+    const p = hit ? hit.point : ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    return p && p.distanceTo(this.activeCam.position) < 1500 ? p : null;
   }
 
   get activeCam() { return store.state.view === 'shot' ? this.shotCam : this.freeCam; }
@@ -240,7 +253,12 @@ export class Viewport {
       let m = this.meshes.get(o.id);
       // a person without its own detail follows the scene's env.people
       const params = o.type === 'person' ? { ...o.params, detail: o.params.detail ?? env.people ?? 'low' } : o.params;
-      const geoKey = o.type + JSON.stringify(params);
+      let geoKey = o.type + JSON.stringify(params);
+      if (o.type === 'model') {
+        const st = modelState(o.params.file);
+        if (st === 'none') this._loadModel(o.params.file);
+        geoKey += st;
+      }
       if (!m) {
         const mat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, color: o.color });
         const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
@@ -261,8 +279,9 @@ export class Viewport {
         mesh.material.vertexColors = !!mesh.geometry.attributes.color;
         mesh.material.needsUpdate = true;
         // A body's fine creases would draw as stray lines, so people show selection with a tint instead.
-        m.tint = o.type === 'person';
-        edges.geometry = m.tint ? new THREE.BufferGeometry() : new THREE.EdgesGeometry(mesh.geometry, 28);
+        // big imported models too: thousands of tiny edges would grey them out
+        m.tint = o.type === 'person' || (o.type === 'model' && mesh.geometry.attributes.position?.count > 120000);
+        edges.geometry = m.tint || !mesh.geometry.attributes.position ? new THREE.BufferGeometry() : new THREE.EdgesGeometry(mesh.geometry, 28);
         m.geoKey = geoKey;
       }
       mesh.material.color.set(o.color);
@@ -284,6 +303,19 @@ export class Viewport {
     this._rebuildPath();
     this.layout();
   }
+
+  /** Load a model's file, then redraw. Snapshots and exports wait for every model still loading (ready()). */
+  _loadModel(file) {
+    this.pending ||= new Set();
+    const p = loadModel(file).then(() => {
+      if (modelState(file) === 'error') toast(`model ${file} could not be loaded: ${modelError(file)}`, { kind: 'error', ms: 6000 });
+      if (store.doc) this.sync(store.doc);
+    }).finally(() => this.pending.delete(p));
+    this.pending.add(p);
+  }
+
+  /** Resolves once every model file the scene uses has loaded (or failed). */
+  async ready() { while (this.pending?.size) await Promise.all([...this.pending]); }
 
   _applySelection() {
     const id = store.state.selection;
@@ -370,7 +402,7 @@ export class Viewport {
   }
 
   /** Point the active camera at an object (or the whole set). */
-  frame(id) {
+  frame(id, { margin = 1.1 } = {}) {
     const box = new THREE.Box3();
     if (id && this.meshes.get(id)) box.setFromObject(this.meshes.get(id).mesh);
     else if (this.objects.children.length) box.setFromObject(this.objects);
@@ -379,7 +411,7 @@ export class Viewport {
     const radius = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
     const cam = this.activeCam, orbit = this.activeOrbit;
     const dir = cam.position.clone().sub(orbit.target).normalize();
-    const dist = radius / Math.sin((cam.fov * DEG) / 2) * 1.1;
+    const dist = radius / Math.sin((cam.fov * DEG) / 2) * margin;
     orbit.target.copy(center);
     cam.position.copy(center).addScaledVector(dir, dist);
     orbit.update();

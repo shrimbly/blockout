@@ -13,7 +13,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { applyOps, createDoc, migrate, describe, shotList, AUDIO_FILE } from '../core/doc.js';
+import { applyOps, createDoc, migrate, describe, shotList, AUDIO_FILE, MODEL_FILE } from '../core/doc.js';
+import { glbInfo } from './glb.mjs';
 import crypto from 'node:crypto';
 import { dataDir } from './paths.mjs';
 
@@ -52,6 +53,25 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   const savesDir = path.join(path.dirname(scenePath), 'saved');
   const uploadsDir = path.join(workDir, 'uploads');
   const audioDir = path.join(path.dirname(scenePath), 'audio'); // the timeline's audio tracks, shared by every save
+  const modelsDir = path.join(path.dirname(scenePath), 'models'); // imported .glb models, shared by every save
+  // size and counts of each model file, read once (the file name includes a hash of its content)
+  const modelInfos = new Map();
+  const modelInfo = (file) => {
+    if (!modelInfos.has(file)) {
+      try { modelInfos.set(file, glbInfo(fs.readFileSync(path.join(modelsDir, file)))); } catch (e) { return { error: e.code === 'ENOENT' ? 'file missing' : e.message }; }
+    }
+    return modelInfos.get(file);
+  };
+  const fmtSize = (v) => v.map((x) => +x.toFixed(2)).join(' × ');
+  // ls line: a model also says how big it is as authored and how big it is drawn
+  const describeObj = (o) => {
+    const line = describe(o);
+    if (o.type !== 'model') return line;
+    const i = modelInfo(o.params.file);
+    if (!i.size) return `${line} [model: ${i.error || 'no geometry'}]`;
+    const k = o.params.h ? o.params.h / i.size[1] : 1;
+    return `${line} [model ${fmtSize(i.size)} m as authored${o.params.h ? `, drawn ${fmtSize(i.size.map((v) => v * k))} m` : ''}]`;
+  };
   fs.mkdirSync(workDir, { recursive: true });
   fs.mkdirSync(exportsDir, { recursive: true });
   const inboxPath = path.join(workDir, 'inbox.jsonl');
@@ -303,6 +323,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     ['/saved/', savesDir],
     ['/uploads/', uploadsDir],
     ['/audio/', audioDir],
+    ['/models/', modelsDir],
     ['/', path.join(ROOT, 'app')],
   ];
 
@@ -313,7 +334,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       json(res, 200, {
         rev, scene: scenePath, exports: exportsDir, ...statusPayload(), tabs: clients.size,
         meta: doc.meta, env: doc.env,
-        objects: doc.objects.map(describe),
+        objects: doc.objects.map(describeObj),
         timeline: { duration: tl.duration, fps: tl.fps, interp: tl.interp, speed: tl.speed, start: tl.start || 0, audio: tl.audio || null },
         shot: doc.shot,
         shots: shotList(doc).map((s) => ({ id: s.id, name: s.name, active: s.active, duration: s.timeline.duration, fps: s.timeline.fps, start: s.timeline.start || 0, keys: s.timeline.keys.length, audio: s.timeline.audio?.name || null })),
@@ -433,6 +454,32 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       fs.mkdirSync(audioDir, { recursive: true });
       fs.writeFileSync(path.join(audioDir, file), body);
       json(res, 200, { ok: true, file, name: orig, path: path.join(audioDir, file), url: `/audio/${file}`, bytes: body.length });
+    },
+
+    // A .glb model: saved under the scene folder's models/ by a name made from the file's name and content
+    // (the same file uploaded twice is stored once). Replies with its size as authored, so the caller can
+    // scale it (glTF is in metres). The caller then adds it with { op: 'add', type: 'model', file }.
+    'POST /api/model': async (req, res, url) => {
+      const orig = path.basename(url.searchParams.get('name') || 'model.glb');
+      const body = await readBody(req, 500 * 1024 * 1024);
+      if (!body.length) return json(res, 400, { ok: false, error: 'empty model file' });
+      if (/\.gltf$/i.test(orig)) return json(res, 400, { ok: false, error: '.gltf files keep their data in separate files: export or convert it to a single .glb' });
+      let info;
+      try { info = glbInfo(body); } catch (e) { return json(res, 400, { ok: false, error: `${orig}: ${e.message}` }); }
+      const stem = orig.replace(/\.[^.]*$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'model';
+      const file = `${stem}-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 8)}.glb`;
+      if (!MODEL_FILE.test(file)) return json(res, 400, { ok: false, error: `bad model name "${orig}"` });
+      fs.mkdirSync(modelsDir, { recursive: true });
+      fs.writeFileSync(path.join(modelsDir, file), body);
+      modelInfos.set(file, info);
+      json(res, 200, { ok: true, file, name: orig, path: path.join(modelsDir, file), url: `/models/${file}`, bytes: body.length, ...info });
+    },
+    'GET /api/models': (req, res) => {
+      let files = [];
+      try { files = fs.readdirSync(modelsDir).filter((f) => MODEL_FILE.test(f)); } catch {}
+      const used = new Map();
+      for (const o of doc.objects) if (o.type === 'model') used.set(o.params.file, [...(used.get(o.params.file) || []), o.id]);
+      json(res, 200, { ok: true, dir: modelsDir, models: files.map((file) => ({ file, bytes: fs.statSync(path.join(modelsDir, file)).size, used: used.get(file) || [], ...modelInfo(file) })) });
     },
 
     // ----- prompts: canvas -> agent -----

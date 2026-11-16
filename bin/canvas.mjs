@@ -39,6 +39,11 @@ Objects (meters, Y up, pivot at bottom centre, rotation in degrees)
   canvas set <id> [same flags as add] [--move dx,dy,dz] [--type t]
   canvas dup <id> [--offset x,y,z] [--name n]
   canvas rm <id> [id...]
+  canvas add model <file.glb> [--h 4.5] [--pos x,y,z] [--name n]
+                                            import a .glb (copied into the scene's models/, drawn in clay);
+                                            prints its size as authored. --h: scale it to that height (m)
+  canvas set <id> --file <file.glb>         swap a model's file
+  canvas models                             model files in the scene's models/ with their sizes
   canvas new                                start a new, empty scene (undoable)
   canvas clear [--keys]                     remove all objects (and camera keys)
   canvas env [--background #hex] [--ground on|off] [--grid on|off] [--fog 0.02] [--sun x,y,z] [--people high|low]
@@ -177,6 +182,32 @@ const shotLine = (s, i) => `${s.active ? '*' : ' '} ${i + 1} ${s.id}${s.name !==
 const rpc = (method, params = {}, timeout) => api('POST', '/api/rpc', { method, params, timeout }).then((d) => d.result);
 const out = (v) => console.log(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 
+// A local .glb given to "add model" / "set --file": upload it into the scene's models/ and use the stored name.
+// A bare name that is not a local file is taken as one already in models/ (see "canvas models").
+async function uploadModel(flags) {
+  if (flags.file == null || flags.file === true) throw new Error('usage: canvas add model <file.glb> [--h height] [--pos x,y,z]');
+  const local = path.resolve(String(flags.file));
+  if (!fs.existsSync(local)) {
+    const { models, dir } = await api('GET', '/api/models');
+    const m = models.find((x) => x.file === String(flags.file));
+    if (!m) throw new Error(`no such file: ${flags.file} (not a local file, nor a model in ${dir}; canvas models lists those)`);
+    return m.size ? { compressed: [], ...m } : null;
+  }
+  const res = await fetch(`${BASE}/api/model?name=${encodeURIComponent(path.basename(local))}`, { method: 'POST', body: fs.readFileSync(local) })
+    .catch(() => { throw new Error(`canvas server is not running at ${BASE}`); });
+  const up = await res.json();
+  if (!up.ok) throw new Error(up.error);
+  flags.file = up.file;
+  return up;
+}
+const modelLine = (m, h) => {
+  if (!m.size) return `model ${m.file}: no geometry found`;
+  const f = (v) => v.map((x) => +x.toFixed(2)).join(' × ');
+  const k = h != null && h !== true ? num(h) / m.size[1] : 1;
+  const warn = m.size[1] > 200 || m.size[1] < 0.02 ? ' (probably not in metres: set --h to the real height)' : '';
+  return `model ${m.file}: ${f(m.size)} m as authored (w × h × d)${k !== 1 ? `, drawn ${f(m.size.map((v) => v * k))} m` : warn}, ${m.triangles} triangles${m.compressed.length ? `, ${m.compressed.join(' + ')}` : ''}`;
+};
+
 function objectFields(flags, type) {
   const o = {};
   if (flags.name != null) o.name = String(flags.name);
@@ -196,8 +227,8 @@ function objectFields(flags, type) {
     if (known.has(k)) continue;
     const allParams = new Set(Object.values(PRIMITIVES).flatMap((p) => Object.keys(p.params)));
     if (!allParams.has(k)) throw new Error(`unknown flag --${k}`);
-    const isChoice = Object.values(PRIMITIVES).some((p) => p.choices?.[k]);
-    o[k] = v === 'null' ? null : isChoice ? String(v) : num(v);
+    const isText = Object.values(PRIMITIVES).some((p) => p.choices?.[k] || p.text?.includes(k));
+    o[k] = v === 'null' ? null : isText ? String(v) : num(v);
   }
   if (type && o.position == null) o.position = [0, 0, 0];
   return o;
@@ -360,10 +391,17 @@ const commands = {
   async add({ pos, flags }) {
     const type = pos[0];
     if (!type) throw new Error(`usage: canvas add <type> ... (types: ${Object.keys(PRIMITIVES).join(', ')})`);
+    if (type === 'model' && pos[1] && flags.file == null) flags.file = pos[1];
+    const up = type === 'model' ? await uploadModel(flags) : null;
     const r = await op({ op: 'add', type, ...objectFields(flags, type) });
-    out(r.results[0].id);
+    out(r.results[0].id + (up ? `\n${modelLine(up, flags.h ?? flags.size)}` : ''));
+  },
+  async models() {
+    const r = await api('GET', '/api/models');
+    out(r.models.length ? r.models.map((m) => `${m.file}  ${m.size ? `${m.size.join(' × ')} m as authored` : m.error || 'no geometry'}, ${m.triangles ?? '?'} triangles, ${(m.bytes / 1e6).toFixed(1)} MB${m.used.length ? `, used by ${m.used.join(', ')}` : ''}`).join('\n') : `no models yet (${r.dir}). Add one: canvas add model path/to/file.glb`);
   },
   async set({ pos, flags }) {
+    if (flags.file != null) await uploadModel(flags);
     if (!pos[0]) throw new Error('usage: canvas set <id> --pos x,y,z ...');
     const r = await op({ op: 'update', id: pos[0], ...objectFields(flags) });
     out(r.results[0].id);

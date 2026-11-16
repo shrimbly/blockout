@@ -22,7 +22,14 @@ export const PRIMITIVES = {
     params: { h: null, body: 'male', detail: null }, size: ['h'], choices: { body: ['male', 'female', 'child'], detail: ['high', 'low'] },
     about: 'human figure facing +z; body male|female|child, h defaults to 1.8 / 1.65 / 1.3 m; detail high|low (unset: the scene\'s env.people)',
   },
+  model: {
+    params: { file: null, h: null }, size: ['h'], text: ['file'],
+    about: 'imported .glb model (file in the scene folder\'s models/, uploaded with "canvas add model <file.glb>" or dropped on the canvas), drawn in clay like the rest; h scales it to that height (unset: as authored)',
+  },
 };
+
+// Imported models: .glb files stored in the scene folder's models/ (shared by every save).
+export const MODEL_FILE = /^[a-z0-9][a-z0-9._-]*\.glb$/i;
 
 // How people are drawn when a person's own detail is not set: 'low' (the default for new scenes) is a box
 // body with a cube head, 'high' the jointed mannequin. Set per scene with env.people.
@@ -105,7 +112,9 @@ function normParams(type, params = {}, base) {
   for (const [k, v] of Object.entries(params)) {
     if (!(k in spec.params)) throw new Error(`${type} has no param "${k}" (params: ${Object.keys(spec.params).join(', ')})`);
     const choices = spec.choices?.[k];
-    if (choices) {
+    if (spec.text?.includes(k)) {
+      if (v !== null && (typeof v !== 'string' || !MODEL_FILE.test(v) || v.includes('..'))) throw new Error(`${type}.${k} must be a .glb file name in the scene's models/ folder, got ${JSON.stringify(v)}`);
+    } else if (choices) {
       if (v !== null && !choices.includes(v)) throw new Error(`${type}.${k} must be one of ${choices.join(', ')}, got ${JSON.stringify(v)}`);
     } else if (v !== null && !Number.isFinite(v)) throw new Error(`${type}.${k} must be a number`);
     out[k] = v;
@@ -192,13 +201,17 @@ export const OPS = {
   add(doc, op) {
     const type = op.type;
     if (!PRIMITIVES[type]) throw new Error(`unknown type "${type}" (types: ${Object.keys(PRIMITIVES).join(', ')})`);
-    const id = op.id ? slug(op.id) : op.name ? uniqueId(doc, slug(op.name), { named: true }) : uniqueId(doc, type);
+    const params = normParams(type, pickParams(type, op));
+    if (type === 'model' && !params.file) throw new Error('a model needs its file: upload it with "canvas add model <file.glb>" (or drop it on the canvas)');
+    // an unnamed model is named after its file ("car-3f9a1c2e.glb" → "car")
+    const name = op.name || (type === 'model' ? params.file.replace(/(-[0-9a-f]{8})?\.glb$/i, '') : null);
+    const id = op.id ? slug(op.id) : name ? uniqueId(doc, slug(name), { named: true }) : uniqueId(doc, type);
     if (doc.objects.some((o) => o.id === id)) throw new Error(`id "${id}" already exists`);
     const obj = {
       id,
       name: op.name || id,
       type,
-      params: normParams(type, pickParams(type, op)),
+      params,
       position: op.position != null ? vec3(op.position, 'position') : [0, 0, 0],
       rotation: op.rotation != null ? vec3(op.rotation, 'rotation') : [0, 0, 0],
       scale: op.scale != null ? vec3(op.scale, 'scale') : [1, 1, 1],
@@ -219,6 +232,7 @@ export const OPS = {
     }
     const params = pickParams(o.type, op);
     if (Object.keys(params).length) o.params = normParams(o.type, params, o.params);
+    if (o.type === 'model' && !o.params.file) throw new Error('a model needs its file (a .glb in the scene\'s models/ folder)');
     if (op.name != null) o.name = String(op.name);
     // On an animated object, changing its transform shifts the whole move (every key) by the same amount.
     const before = { position: [...o.position], rotation: [...o.rotation], scale: [...o.scale] };
