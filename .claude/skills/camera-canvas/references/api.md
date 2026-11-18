@@ -56,7 +56,7 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `key.clear` | | `{ removed }` |
 | `timeline` | `duration`, `retime?` (scale key times; object keys too when there is only one shot), `start` (s into the shared action where this shot begins; 0 clears it), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |
 | `audio` | `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (s on the timeline where the audio starts; negative skips into it), `volume` (0–4), `muted`, `length` (set by the tab), `fit` (duration = length + offset), `clear` | `{ audio, duration }` |
-| `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true), `start?` (action time it picks up at; default where the active shot ends). Inserted after the active shot | `{ id, name, shots, active }` |
+| `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true), `start?` (action time it picks up at; default where the active shot ends), `duration?` (its length; default the copied shot's), `frame?` (one key instead of a copy: the copied shot's framing at the moment it picks up, what the canvas's "+ New shot" row does). Inserted after the active shot | `{ id, name, start, shots, active }` |
 | `shot.split` | `t` (shot time, snapped to a frame, inside the shot), `name?`, `id?`, `switch?` (default true). The active shot ends at `t`; a new shot after it gets the same framing at its first key, the later keys, the rest of the length, `start` = this shot's start + t and the audio carried on. Needs a linear shot speed | `{ id, name, at, shots, active }` |
 | `shot.use` | `id` (id, name or 1-based position) — make it the active shot | `{ id, name }` |
 | `shot.update` | `id?` (default active), `name` | `{ id, name }` |
@@ -126,7 +126,7 @@ shot A's last (hold) key.
 
 ## Shots
 
-`canvas shots`, `canvas shot <id|name|n>` (switch), `canvas shot-add [--name] [--from id] [--blank] [--stay]`,
+`canvas shots`, `canvas shot <id|name|n>` (switch), `canvas shot-add [--name] [--from id] [--blank] [--stay] [--start s] [--length s] [--frame]`,
 `canvas shot-cut <t> [--name n] [--stay]` (split the active shot at t), `canvas shot-set [id] [--name n] [--to position] [--start s]`, `canvas shot-rm <id>`. `canvas ls` lists them.
 
 ## Save / load

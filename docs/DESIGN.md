@@ -35,7 +35,8 @@ Never write raw colours, sizes or fonts in a control; use the variables.
 | `--cc-h` (24 px) | height of every control |
 | `--cc-gap` (6 px), `--cc-pad` (8 px) | spacing inside panels |
 | `--cc-radius` (6 px), `--cc-radius-lg` (10 px) | controls / panels |
-| `--cc-font`, `--cc-mono`, `--cc-size` (11 px), `--cc-size-sm` (10 px) | UI text / numbers / small caps headers |
+| `--cc-font`, `--cc-mono`, `--cc-size` (11 px), `--cc-size-sm` (10 px) | UI text (Allo) / numbers (Geist Mono) / small caps headers. Both fonts are self-hosted in `app/ui/fonts` (OFL). |
+| `--cc-round` | Allo's roundness (`"ROND" 0` sharp to `100` round), set on the body |
 | `--cc-ease`, `--cc-dur` | transitions |
 
 Dark mode is automatic (`prefers-color-scheme`), so controls that only use tokens work in both.

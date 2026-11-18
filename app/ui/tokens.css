@@ -1,5 +1,10 @@
 /* Blockout design tokens. Every control uses these, never raw values.
    See docs/DESIGN.md before adding or changing anything here. */
+
+/* UI type: Allo (variable, set to full roundness in kit.css) and Geist Mono for numbers.
+   Both self-hosted from ui/fonts under the SIL Open Font License 1.1 (OFL-*.txt there). */
+@font-face { font-family: "Allo"; src: url("fonts/AlloVariable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 :root {
   /* surfaces */
   --cc-bg: #e9e7e2;              /* scene background default (lives in the doc, this is the fallback) */
@@ -30,8 +35,9 @@
   --cc-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 24px rgba(0, 0, 0, 0.08);
 
   /* type */
-  --cc-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
-  --cc-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --cc-font: "Allo", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  --cc-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --cc-round: "ROND" 100;        /* Allo roundness, 0 sharp to 100 round */
   --cc-size: 11px;
   --cc-size-sm: 10px;
 

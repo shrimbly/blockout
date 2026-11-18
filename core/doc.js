@@ -474,6 +474,8 @@ export const OPS = {
    * Add a shot after the current one and switch to it. It starts as a copy of the current shot's camera
    * and settings (from: another shot to copy instead; blank: true for the default two-key move), and picks
    * up the action where the current shot ends (start: another action time, e.g. 0 for coverage).
+   * frame: true starts it on one key instead: the copied shot's framing at the moment it picks up (its last
+   * frame for the next shot). duration: its length (default the copied shot's).
    * switch: false keeps the current shot active.
    */
   'shot.add'(doc, op) {
@@ -484,6 +486,17 @@ export const OPS = {
     const st = op.start != null ? Number(op.start) : (doc.timeline.start || 0) + doc.timeline.duration;
     if (!(st >= 0 && st <= 3600)) throw new Error('start must be 0–3600 s');
     if (st) tl.start = round(st); else delete tl.start;
+    if (op.frame && !op.blank) {
+      const t = Math.max(0, Math.min(src.duration, st - (src.start || 0)));
+      const p = sampleCamera(src, t);
+      const r3 = (v) => round(v);
+      tl.keys = p ? [{ id: 'k1', ...normKey({ t: 0, position: p.position.map(r3), target: p.target.map(r3), fov: r3(p.fov), roll: r3(p.roll), ease: 'easeInOut' }) }] : [];
+      tl.speed = 'linear';
+    }
+    if (op.duration != null) {
+      if (!(op.duration > 0 && op.duration <= 600)) throw new Error('duration must be 0–600 s');
+      tl.duration = round(op.duration);
+    }
     const n = doc.shots.length + 1;
     const taken = new Set(doc.shots.map((s) => s.id));
     let id = op.id || op.name ? slug(op.id || op.name) : `shot-${n}`;
@@ -492,7 +505,7 @@ export const OPS = {
     const at = doc.shots.findIndex((s) => s.id === doc.shot);
     doc.shots.splice(at + 1, 0, { id, name, timeline: tl });
     if (op.switch !== false) activate(doc, id);
-    return { id, name, shots: doc.shots.length, active: doc.shot };
+    return { id, name, start: round(st), shots: doc.shots.length, active: doc.shot };
   },
 
   /**

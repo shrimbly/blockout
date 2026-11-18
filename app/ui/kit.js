@@ -56,7 +56,7 @@ export function button({ label: text, icon: ic, title, kind = 'default', onClick
   const cls = ['cc-btn'];
   if (kind !== 'default') cls.push(`cc-btn--${kind}`);
   if (ic && !text) cls.push('cc-btn--icon');
-  const el = h(`button.${cls.join('.')}`, { type: 'button', title: title || text, onClick }, ic ? icon(ic) : null, text);
+  const el = h(`button.${cls.join('.')}`, { type: 'button', title: title || text, onClick }, ic ? icon(ic) : null, text ? h('span.cc-btn__label', {}, text) : null);
   el.setActive = (on) => el.classList.toggle('is-active', !!on);
   el.setActive(active);
   return el;
@@ -66,7 +66,7 @@ export function button({ label: text, icon: ic, title, kind = 'default', onClick
 export function segmented({ options, value, onChange, title } = {}) {
   const el = h('div.cc-seg', { role: 'tablist', title });
   const btns = options.map((o) => {
-    const b = h('button', { type: 'button', title: o.title || o.label, onClick: () => { set(o.value); onChange?.(o.value); } }, o.icon ? icon(o.icon) : null, o.label);
+    const b = h('button', { type: 'button', title: o.title || o.label, onClick: () => { set(o.value); onChange?.(o.value); } }, o.icon ? icon(o.icon) : null, o.label != null ? h('span.cc-seg__label', {}, o.label) : null);
     b.dataset.value = o.value;
     return b;
   });
@@ -183,9 +183,11 @@ export function text({ value = '', placeholder = '', onChange, onEnter } = {}) {
 
 /** Transient message near the bottom of the screen. */
 let stack;
-export function toast(message, { kind = 'info', ms = 3200 } = {}) {
+export function toast(message, { kind = 'info', ms = 3200, action } = {}) {
   stack ??= document.body.appendChild(h('div.cc-toast-stack'));
   const el = h(`div.cc-panel.cc-toast${kind === 'error' ? '.cc-toast--error' : ''}`, {}, message);
+  // action: { label, onClick } adds one button; clicking it runs onClick and closes the toast
+  if (action) el.append(button({ label: action.label, kind: 'default', onClick: () => { el.remove(); action.onClick(); } }));
   stack.append(el);
   setTimeout(() => el.remove(), ms);
   return el;

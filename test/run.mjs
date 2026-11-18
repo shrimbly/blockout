@@ -389,6 +389,26 @@ test('shots: old single-timeline scenes migrate to one shot and shots round-trip
   assert.equal(shotTimeline(back, 'b').duration, 3);
 });
 
+test('shots: shot.add frame starts on one key, the source framing at that moment; duration sets its length', () => {
+  let doc = createDoc();
+  const src = doc.timeline, last = [...src.keys].sort((a, b) => a.t - b.t).pop();
+  let results;
+  ({ doc, results } = applyOps(doc, { op: 'shot.add', frame: true }));
+  assert.equal(results[0].start, src.duration, 'the next shot, from where the first ends');
+  assert.equal(doc.timeline.keys.length, 1);
+  assert.equal(doc.timeline.keys[0].t, 0);
+  assert.deepEqual(doc.timeline.keys[0].position, last.position, 'on the first shot\'s last frame');
+  assert.equal(doc.timeline.duration, src.duration);
+  ({ doc, results } = applyOps(doc, [{ op: 'shot.use', id: 'shot-1' }, { op: 'shot.add', frame: true, start: 2, duration: 1.5 }]));
+  const p = sampleCamera(shotTimeline(doc, 'shot-1'), 2);
+  assert.equal(results[1].start, 2);
+  assert.equal(doc.timeline.duration, 1.5);
+  assert.equal(doc.timeline.start, 2);
+  doc.timeline.keys[0].position.forEach((v, i) => assert.ok(Math.abs(v - p.position[i]) < 1e-3, 'framing of shot 1 at 2 s'));
+  assert.deepEqual(doc.shots.map((s) => s.id), ['shot-1', 'shot-3', 'shot-2'], 'inserted after the active shot');
+  assert.throws(() => applyOps(doc, { op: 'shot.add', duration: 0 }), /duration must be/);
+});
+
 test('shots: timeline.start picks up the shared action later; object key ops use shot time', () => {
   let { doc } = applyOps(createDoc(), [{ op: 'add', type: 'box', name: 'car' }, { op: 'anim.move', id: 'car', to: [10, 0, 0], at: 0, over: 4, ease: 'linear' }]);
   ({ doc } = applyOps(doc, { op: 'shot.add', name: 'next' }));

@@ -46,17 +46,18 @@ function refreshSel() {
 
 // ---------- help (top right) ----------
 const SHORTCUTS = [
+  ['WASD', 'fly while you hold the right mouse button (arrows too)'], ['Q E', 'fly down / up · Shift faster · scroll: speed'], ['Z X', 'roll (Dutch tilt) while flying'],
   ['Click', 'aim the camera at that point'], ['Ctrl Click', 'select an object (⌘ works too)'], ['W E R', 'move / rotate / scale'], ['F', 'frame selection (or all)'],
   ['Shift D', 'duplicate'], ['⌫', 'delete object or key'], ['Esc', 'deselect'],
-  ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['X', 'cut at the playhead (the rest becomes a new shot)'], ['C', 'Free ↔ Shot camera'],
-  ['[ ]', 'previous / next shot'], ['Shift [ ]', 'move the shot earlier / later'], ['Shift N', 'new shot (a copy of this camera, same set)'],
+  ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['C', 'Free ↔ Shot camera'],
+  ['[ ]', 'previous / next shot'], ['Shift [ ]', 'move the shot earlier / later'], ['Shift N', 'next shot (or drag across the + New shot row)'],
   ['← →', 'step a frame (Shift: 1 s)'], ['Home', 'go to start'], ['/', 'prompt your agent'], ['⌘Z ⇧⌘Z', 'undo / redo'], ['⌘S', 'save / load scenes'],
 ];
 const helpPanel = panel({ title: 'Shortcuts', collapsible: false });
 helpPanel.classList.add('help-panel');
 helpPanel.hidden = true;
 helpPanel.body.append(...SHORTCUTS.map(([k, v]) => h('div.help-row', {}, h('span.help-key', {}, ...k.split(' ').map(kbd)), h('span.help-text', {}, v))),
-  h('div.cc-label.help-foot', {}, 'Orbit: drag · Pan: right-drag · Zoom: scroll'));
+  h('div.cc-label.help-foot', {}, 'Orbit: drag · Pan: right-drag · Zoom: scroll · Lens: Ctrl/⌘ scroll or pinch'));
 const helpBtn = button({ icon: 'keyboard', kind: 'ghost', title: 'Shortcuts (?)', onClick: () => { helpPanel.hidden = !helpPanel.hidden; helpBtn.setActive(!helpPanel.hidden); } });
 const saves = mountSaves($('corner'), { viewport });
 document.body.append(helpPanel);
@@ -144,7 +145,6 @@ addEventListener('keydown', (e) => {
     w: () => store.set({ gizmo: 'translate' }), e: () => store.set({ gizmo: 'rotate' }), r: () => store.set({ gizmo: 'scale' }),
     f: () => viewport.frame(store.state.selection),
     k: () => timeline.keyFromView(),
-    x: () => timeline.cutHere(),
     c: () => store.set({ view: store.state.view === 'shot' ? 'free' : 'shot' }),
     escape: () => { store.set({ selection: null, key: null }); helpPanel.hidden = true; helpBtn.setActive(false); },
     backspace: () => (store.state.selection ? removeSelected() : timeline.deleteKey()),

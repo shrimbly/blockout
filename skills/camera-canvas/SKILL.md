@@ -186,8 +186,7 @@ canvas export --sequence                      # every shot in order, cut togethe
 
 - The user asks for "another angle", "a close-up of this", "cut to", "coverage": add a shot rather than
   a hold-cut, unless they want one continuous clip. "Cut here" = `canvas shot-cut <t>`: the shot ends at t
-  and a new one carries on from the same framing (the user's Cut button and X key do the same); re-frame
-  the new shot's first key.
+  and a new one carries on from the same framing; re-frame the new shot's first key.
 - Object moves are in **action time**, shared by every shot. A new shot picks up the action where the
   current one ends (shot 1 is 0–3 s → the new shot starts at 3 s), so a sequence continues across cuts.
   For coverage of the same moment from another angle, use `shot-add --start 0` (or the start you want);
@@ -197,10 +196,11 @@ canvas export --sequence                      # every shot in order, cut togethe
   are several shots (the shared action keeps its timing).
 - Exports are named `<scene>-<shot>-<time>.mp4` once there are several shots; `export --sequence` uses
   `--fps` or the active shot's fps for every shot and joins each shot's audio.
-- With two or more shots the user's key track stacks them, one row per shot on the action-time axis
+- The user's key track stacks the shots, one row per shot on the action-time axis
   (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
   `--start`, up or down reorders; Delete on a clicked bar removes it; Play all plays through the cuts).
-  They add a shot with + Shot or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
+  They add a shot from the "+ New shot" row under the shots (click = next shot, drag = any span; same as
+  `shot-add --frame [--start s] [--length s]`) or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
   Shift-click Export for the whole sequence.
   Canvas prompts carry `shot:` (the active shot) when there are several.
 

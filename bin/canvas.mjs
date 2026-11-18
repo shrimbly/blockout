@@ -61,11 +61,13 @@ Shots (one set, several cameras: objects and their moves are shared, each shot h
 timeline, length, fps and audio; camera, timeline and render commands work on the active shot)
   canvas shots                              list the shots in sequence order (* = active)
   canvas shot <id|name|n>                   switch to a shot (the user's timeline follows)
-  canvas shot-add [--name n] [--from id] [--blank] [--stay] [--start s]
+  canvas shot-add [--name n] [--from id] [--blank] [--stay] [--start s] [--length s] [--frame]
                                             new shot after the current one, copying its camera (or --from
                                             another shot; --blank: a fresh two-key move), then switch to it.
                                             It picks up the action where the current shot ends (--start 0:
-                                            from the beginning, for coverage of the same moment)
+                                            from the beginning, for coverage of the same moment). --frame:
+                                            one key, the copied shot's framing at that moment (what the
+                                            canvas's "+ New shot" row does); --length: its duration
   canvas shot-cut <seconds> [--name n] [--stay]          cut the active shot there: the rest becomes a new shot
   canvas shot-set [id] [--name n] [--to n] [--start s]   rename, move to position n in the sequence, or set
                                             where the shot picks up the action (s seconds into the object moves)
@@ -447,8 +449,10 @@ const commands = {
     if (flags.blank) o.blank = true;
     if (flags.stay) o.switch = false;
     if (flags.start != null) o.start = num(flags.start);
+    if (flags.length != null) o.duration = num(flags.length);
+    if (flags.frame) o.frame = true;
     const r = (await op(o, 'new shot')).results[0];
-    out(`added shot ${r.id} "${r.name}" (${r.shots} shots, active: ${r.active})`);
+    out(`added shot ${r.id} "${r.name}" from ${r.start}s (${r.shots} shots, active: ${r.active})`);
   },
   async 'shot-cut'({ pos, flags }) {
     if (pos[0] == null) throw new Error('usage: canvas shot-cut <seconds> [--name n] [--stay]');
@@ -478,7 +482,7 @@ const commands = {
     const k = keyFields(flags);
     if (flags['from-view']) {
       const cam = await rpc('camera');
-      k.position ??= cam.position; k.target ??= cam.target; k.fov ??= cam.fov;
+      k.position ??= cam.position; k.target ??= cam.target; k.fov ??= cam.fov; k.roll ??= cam.roll;
       if (k.t == null) k.t = cam.time;
     }
     const r = await op({ op: 'key.add', ...k });
@@ -487,7 +491,7 @@ const commands = {
   async 'key-set'({ pos, flags }) {
     if (!pos[0]) throw new Error('usage: canvas key-set <keyId|index> --ease snap');
     const k = keyFields(flags);
-    if (flags['from-view']) { const cam = await rpc('camera'); Object.assign(k, { position: cam.position, target: cam.target, fov: cam.fov }); }
+    if (flags['from-view']) { const cam = await rpc('camera'); Object.assign(k, { position: cam.position, target: cam.target, fov: cam.fov, ...(cam.roll != null && { roll: cam.roll }) }); }
     const r = await op({ op: 'key.update', ...keyRef(pos[0]), ...k });
     out(`updated key ${r.results[0].id}`);
   },

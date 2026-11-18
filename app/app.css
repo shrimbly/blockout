@@ -158,7 +158,12 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 
 /* bottom: timeline */
 #timeline { position: fixed; left: 12px; right: 12px; bottom: 12px; height: calc(104px + var(--stack-h, 0px)); z-index: 10; display: flex; flex-direction: column; padding: 8px; gap: 6px; }
-.tl-bar { display: flex; align-items: center; gap: 4px; height: 26px; flex: none; }
+/* The bar never squeezes its controls into each other: when they don't fit, timeline.js steps it down
+   (.is-fit1..3 below) only as far as it needs to, and below the last step it scrolls sideways. The 3px
+   padding, cancelled by the negative margin, keeps focus rings inside the scroll box. */
+.tl-bar { display: flex; align-items: center; gap: 4px; height: 32px; flex: none; margin: -3px; padding: 0 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tl-bar::-webkit-scrollbar { display: none; }
+.tl-bar > *, .tl-key > * { flex-shrink: 0; }
 .tl-time { padding: 0 4px 0 8px; white-space: pre; }
 .tl-faint { color: var(--cc-text-faint); }
 .tl-frame { min-width: 34px; padding-right: 2px; }
@@ -166,7 +171,7 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-bar .cc-seg button svg { width: 12px; height: 12px; }
 .tl-key { display: flex; align-items: center; gap: 2px; height: var(--cc-h); margin-left: 6px; padding: 0 2px 0 8px; border-radius: var(--cc-radius); background: var(--cc-surface-sunk); }
 .tl-diamond { width: 7px; height: 7px; transform: rotate(45deg); background: var(--cc-accent); flex: none; border-radius: 1px; }
-.tl-keytime { padding: 0 6px 0 5px; }
+.tl-keytime { padding: 0 6px 0 5px; white-space: nowrap; }
 .tl-ease { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 0 5px 0 6px; white-space: nowrap; }
 .tl-ease > svg { width: 14px; height: 14px; flex: none; }
 .tl-ease > svg:first-child { color: var(--cc-accent); }
@@ -180,6 +185,37 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-shot svg:last-child { width: 10px; height: 10px; color: var(--cc-text-dim); }
 .tl-shot.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
 .tl-bar > .cc-btn--primary { margin-left: 2px; }
+/* bar too narrow: 1 icon-only buttons, 2 every label off, 3 shorter readouts (full text stays in the tooltips) */
+.tl-bar.is-fit1 :is(.tl-frame, .cc-seg__label), .tl-bar.is-fit1 > .cc-btn:not(.cc-btn--primary) > .cc-btn__label { display: none; }
+.tl-bar.is-fit1 > .cc-btn:not(.cc-btn--primary):has(> .cc-btn__label) { padding: 0; width: var(--cc-h); }
+.tl-bar.is-fit1 .cc-seg > button { padding: 0 6px; }
+.tl-bar.is-fit2 :is(.tl-audio-name, .tl-objkey > span:last-child, .tl-shot-fps, .tl-ease-name, .cc-btn__label) { display: none; }
+.tl-bar.is-fit2 > .cc-btn--primary, .tl-bar.is-fit2 :is(.tl-audiobtn, .tl-objkey) { padding: 0; width: var(--cc-h); justify-content: center; }
+.tl-bar.is-fit2 .tl-ease { padding: 0 4px; }
+.tl-bar.is-fit3 :is(.tl-time > .tl-faint, .tl-keytime) { display: none; }
+.tl-bar.is-fit3 .tl-diamond { margin-right: 4px; }
+.tl-bar.is-fit3 .tl-key .cc-select { max-width: 76px; }
+.tl-more { display: none; }
+.tl-bar.is-fit4 > .tl-more { display: inline-flex; }
+.tl-bar.is-fit4 { gap: 2px; }
+.tl-more.is-open { background: var(--cc-surface-sunk); }
+/* the ⋯ menu: the bar's own controls, one per row, with their labels back */
+.tl-more-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); min-width: 180px; padding: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 25; }
+.tl-more-pop[hidden] { display: none; }
+body.has-audio .tl-more-pop { bottom: calc(156px + var(--stack-h, 0px)); }
+/* rows: a 14px icon column, the label, then any value (dim) and chevron on the right */
+.tl-more-pop > .cc-btn { justify-content: flex-start; gap: 8px; width: 100%; max-width: none; height: 28px; padding: 0 8px; background: transparent; border-color: transparent; }
+.tl-more-pop > .cc-btn:hover { background: var(--cc-surface-sunk); }
+.tl-more-pop > .cc-btn.is-active { background: transparent; }
+.tl-more-pop > .cc-btn.is-active::before { content: ''; order: 9; margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--cc-accent); }
+.tl-more-pop > .cc-btn[data-menu-label]::after { content: attr(data-menu-label); color: var(--cc-text); }
+.tl-more-pop .tl-odot { margin: 0 3.5px; }
+.tl-more-pop > .tl-objkey { order: 1; margin-top: 3px; position: relative; }
+.tl-more-pop > .tl-objkey::before { content: ""; position: absolute; left: 4px; right: 4px; top: -3px; height: 1px; background: var(--cc-line); }
+.tl-more-pop > .tl-shot > .tl-shot-name { margin-right: auto; }
+.tl-more-pop > .tl-shot > :is(.cc-mono, .tl-faint) { color: var(--cc-text-dim); }
+.tl-shot > :is(.tl-shot-icon, .tl-shot-name), .tl-shot > svg:first-child { display: none; }
+.tl-more-pop > .tl-shot > :is(.tl-shot-name), .tl-more-pop > .tl-shot > svg:first-child { display: inline-flex; }
 :is(.shot-pop, .audio-pop) { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); width: 240px; z-index: 25; }
 :is(.shot-pop, .audio-pop)[hidden] { display: none; }
 :is(.shot-pop, .audio-pop) .cc-row > .cc-label { width: 72px; }
@@ -214,9 +250,19 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 
 .curve-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); left: 12px; width: 292px; padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 25; }
 .curve-pop[hidden] { display: none; }
-.curve-canvas { border-radius: var(--cc-radius); background: var(--cc-surface-sunk); cursor: crosshair; align-self: center; touch-action: none; }
-.curve-presets { display: flex; flex-wrap: wrap; gap: 2px; }
-.curve-presets .cc-btn { height: 20px; padding: 0 6px; font-size: var(--cc-size-sm); }
+.curve-canvas { border-radius: var(--cc-radius); background: var(--cc-surface-sunk); align-self: center; touch-action: none; }
+/* the row's flex: 1 split the tabs, spacer and close button in thirds, so the tabs overflowed their track */
+.curve-pop .cc-row > :is(.cc-seg, .cc-btn) { flex: none; }
+.curve-head { min-height: 16px; }
+.curve-head > .cc-label { width: auto; flex: 1; }
+.curve-head > .curve-name { flex: none; font-size: var(--cc-size-sm); color: var(--cc-accent); }
+.curve-name.is-preview { color: var(--cc-text-dim); }
+.curve-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.curve-presets .curve-preset { height: 28px; width: auto; padding: 0; color: var(--cc-text-dim); }
+.curve-presets .curve-preset:hover { color: var(--cc-text); }
+.curve-presets .curve-preset.is-active { color: var(--cc-accent); }
+.curve-presets .curve-preset.is-empty { opacity: .35; }
+.curve-presets .curve-preset svg { width: 18px; height: 18px; }
 .curve-all { align-self: flex-start; height: 22px; padding: 0 8px; font-size: var(--cc-size-sm); }
 .curve-all[hidden] { display: none; }
 .curve-help { white-space: normal; line-height: 1.4; }
@@ -228,8 +274,6 @@ code { font-family: var(--cc-mono); font-size: 11px; }
 @media (max-width: 900px) {
   #prompt { width: calc(100vw - 24px); top: 56px; bottom: calc(128px + var(--stack-h, 0px)); }
   body.has-audio #prompt { bottom: calc(160px + var(--stack-h, 0px)); }
-  .tl-audio-name { display: none; }
-  .tl-frame, .tl-bar .cc-seg button span { display: none; }
 }
 :is(.shot-pop, .audio-pop) .cc-select { appearance: none; -webkit-appearance: none; padding-right: 22px; background-repeat: no-repeat; background-position: right 7px center; background-size: 10px 10px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23908e88' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 6.5 8 9.5 11 6.5'/%3E%3C/svg%3E"); }

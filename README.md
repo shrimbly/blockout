@@ -88,12 +88,14 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | Ctrl-click (or ⌘-click) | select an object; on empty space, deselect |
 | Drop a `.glb` | import a model where it lands (see [Importing models](#importing-models)) |
 | Drag | orbit · right-drag pan · scroll zoom · double-click frames the selection |
+| Hold right mouse + `W` `A` `S` `D` | fly: `W` `A` `S` `D` (or arrows) move, `Q` `E` down / up, `Z` `X` roll (Dutch tilt), the mouse looks around, `Shift` faster, `Alt` slower, scroll sets the fly speed. In Shot view it reframes the shot camera (press `K` to key it). Let go and the keys are shortcuts again. |
+| Roll field (°, next to Lens) | the roll (Dutch tilt) of the selected key and the free view, like Lens. New keys take the view's roll. |
+| Ctrl-scroll (or ⌘-scroll, or pinch) | change the lens (focal length): the free view and selected key, or the shot camera in shot view (press K to key it) |
 | `W` `E` `R` | move / rotate / scale gizmo |
 | `F` · `Shift D` · `⌫` · `Esc` | frame · duplicate · delete · deselect |
 | `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
 | `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
-| `X` | cut at the playhead: this shot ends there and a new shot carries on from the same framing (re-frame it, then `K`) |
-| `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · new shot |
+| `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · next shot |
 | `Space` · `← →` · `Home` | play · step a frame (Shift: 1 s) · start |
 | `⌘Z` / `⇧⌘Z` | undo / redo (also undoes agent changes) |
 
@@ -103,16 +105,19 @@ With a key selected: its ease, lens (mm), "set to current view" and delete. The 
 the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
 camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
 
-**Shots:** one set can have several cameras. **+ Shot** in the timeline bar (or Shift+N) adds a shot
-that picks up the action where the current one ends, with a copy of its camera. With two or more, the key
-track stacks them: one row per shot on the shared action-time axis, each shot a bar from where it picks up
-the action. Shot names sit in a header column on the left; click one to switch, drag it up or down to reorder. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
+**Shots:** one set can have several cameras. The key track shows them as rows on the shared action-time
+axis, each shot a bar from where it picks up the action, with a **+ New shot** row underneath. Hover that row
+to preview the next shot (from where the current one ends, starting on its last frame); click it (or press
+Shift+N) to add it, or drag across the row to draw any span: it snaps to 0 for the same moment from a new
+angle, to the playhead, and to each shot's ends. A new shot starts on the current shot's framing at that
+moment. If it starts inside the current shot, the confirmation offers to end that shot there, so the action
+doesn't play twice. Shot names sit in a header column on the left; click one to switch, drag it up or down to reorder. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
 empty part of a row) to put the playhead at that moment, switching to the shot that covers it. Drag a bar
 sideways to change where it picks up the action, drag it up or down to reorder, and click it and press
 Delete (or right-click it) to remove it. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
 top to bottom in sequence order, and the layers button (**Play all**) plays on through the cuts. The set,
 the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
-length, fps and audio. **Cut** (or `X`) splits the current shot at the playhead into two.
+length, fps and audio.
 Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-cut` and `--shot`.
 
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at

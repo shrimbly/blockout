@@ -43,7 +43,7 @@ const MIME = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.md': 'text/markdown; charset=utf-8',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg',
-  '.opus': 'audio/ogg', '.flac': 'audio/flac',
+  '.opus': 'audio/ogg', '.flac': 'audio/flac', '.woff2': 'font/woff2',
 };
 
 export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = false } = {}) {

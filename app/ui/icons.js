@@ -34,6 +34,7 @@ export const ICONS = {
   keyboard: s('<rect x="1.5" y="4" width="13" height="8.5" rx="1.5"/><path d="M4.5 7h.01M7 7h.01M9.5 7h.01M12 7h.01M5 10h6"/>'),
   sidebar: s('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5v11"/>'),
   sidebarOn: s('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5h2.5a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10z" fill="currentColor"/>'),
+  more: s('<circle cx="3.5" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="12.5" cy="8" r="1" fill="currentColor"/>'),
   chevronDown: s('<path d="M5 6.5 8 9.5 11 6.5"/>'),
   chevronUp: s('<path d="M5 9.5 8 6.5 11 9.5"/>'),
   chevronLeft: s('<path d="M9.5 5 6.5 8 9.5 11"/>'),

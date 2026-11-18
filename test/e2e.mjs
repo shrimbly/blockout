@@ -138,6 +138,7 @@ try {
   // single click aims the camera at the clicked point
   cli('view', 'free');
   await page.waitForTimeout(200);
+  if (await page.isVisible('[data-hint=shot-view]')) await page.click('[data-hint=shot-view] >> text=Got it'); // shown on the first switch to Shot view
   const before = await page.evaluate(() => window.canvas.viewport.freeOrbit.target.toArray());
   const vp = await page.evaluate(() => { const r = window.canvas.viewport.canvas.getBoundingClientRect(); return { x: r.left + r.width * 0.25, y: r.top + r.height * 0.75 }; });
   await page.mouse.click(vp.x, vp.y);
@@ -236,6 +237,79 @@ try {
   const keyFov = JSON.parse(cli('doc')).timeline.keys[0].fov;
   ok(Math.abs((await page.evaluate(() => window.canvas.viewport.freeCam.fov)) - keyFov) < 0.01, 'selecting a key puts the free view on its lens');
 
+  // Ctrl/Cmd + scroll changes the lens instead of dollying: free view + selected key, then shot view
+  const mid = await page.evaluate(() => { const r = window.canvas.viewport.canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await page.mouse.move(mid.x, mid.y);
+  const posBefore = await page.evaluate(() => window.canvas.viewport.freeCam.position.toArray());
+  const fovBefore = await page.evaluate(() => window.canvas.viewport.freeCam.fov);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
+  const fovZoom = await page.evaluate(() => window.canvas.viewport.freeCam.fov);
+  const posZoom = await page.evaluate(() => window.canvas.viewport.freeCam.position.toArray());
+  ok(fovZoom < fovBefore - 0.5 && posZoom.every((v, i) => Math.abs(v - posBefore[i]) < 1e-6), `ctrl+scroll up narrows the free view lens without dollying (${fovBefore.toFixed(1)}° -> ${fovZoom.toFixed(1)}°)`);
+  ok(Math.abs(JSON.parse(cli('doc')).timeline.keys[0].fov - fovZoom) < 0.01, 'ctrl+scroll in free view also sets the selected key lens');
+  cli('seek', '0'); cli('view', 'shot');
+  await page.waitForTimeout(200);
+  const shotFov0 = await page.evaluate(() => window.canvas.viewport.shotCam.fov);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, 100);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  const st = await page.evaluate(() => ({ f: window.canvas.viewport.shotCam.fov, dirty: window.canvas.store.state.camDirty }));
+  ok(st.f > shotFov0 + 0.5 && st.dirty, 'ctrl+scroll in shot view widens the shot camera and marks it to key');
+  cli('seek', '0'); cli('view', 'free');
+  await page.waitForTimeout(200);
+
+  // keyboard fly: hold the right mouse button, W moves forward, E rises, and neither changes the gizmo
+  {
+    const vp = () => page.evaluate(() => { const v = window.canvas.viewport; return { p: v.freeCam.position.toArray(), t: v.freeOrbit.target.toArray(), g: window.canvas.store.state.gizmo }; });
+    await page.evaluate(() => window.canvas.store.set({ key: null, gizmo: 'translate' }));
+    await page.mouse.move(mid.x, mid.y);
+    const a = await vp();
+    const fwd = a.t.map((v, i) => v - a.p[i]); const fl = Math.hypot(...fwd);
+    await page.mouse.down({ button: 'right' });
+    await page.keyboard.down('w'); await page.waitForTimeout(400); await page.keyboard.up('w');
+    await page.keyboard.down('e'); await page.waitForTimeout(300); await page.keyboard.up('e');
+    await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(100);
+    const b = await vp();
+    const d = b.p.map((v, i) => v - a.p[i]);
+    const along = d.reduce((s, v, i) => s + v * fwd[i] / fl, 0);
+    ok(along > 0.5 && d[1] > 0.3, `right button + W flies forward and E rises (forward ${along.toFixed(2)} m, up ${d[1].toFixed(2)} m)`);
+    ok(b.g === 'translate', 'fly keys do not switch the gizmo mode');
+    await page.keyboard.press('e'); await page.waitForTimeout(50);
+    ok((await vp()).g === 'rotate', 'after letting go of the right button, E is the rotate shortcut again');
+    await page.keyboard.press('w');
+    await page.mouse.down({ button: 'right' }); await page.mouse.move(mid.x + 60, mid.y + 30, { steps: 4 }); await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(300);
+    const c = await vp();
+    ok(c.p.some((v, i) => Math.abs(v - b.p[i]) > 0.05), 'right-drag without a fly key still pans');
+    // stop the pan's damping glide so later checks see a still camera
+    await page.evaluate(() => { const o = window.canvas.viewport.freeOrbit; o.enableDamping = false; o.update(); o.enableDamping = true; });
+
+    // roll: right button + X tilts the free view, K keys the roll, the shot camera plays it back
+    await page.mouse.down({ button: 'right' });
+    await page.keyboard.down('x'); await page.waitForTimeout(400); await page.keyboard.up('x');
+    await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(100);
+    const r = await page.evaluate(() => { const v = window.canvas.viewport; const up = new v.freeCam.up.constructor(0, 1, 0).applyQuaternion(v.freeCam.quaternion); return { roll: v.freeRoll, upX: up.x, upZ: up.z, field: document.querySelector('.tl-bar').textContent.includes('°') }; });
+    ok(r.roll > 5 && Math.hypot(r.upX, r.upZ) > 0.05, `right button + X rolls the free view (${r.roll.toFixed(1)}°)`);
+    ok(r.field, 'the bar shows a roll field');
+    const rollT = 2.25;
+    await page.evaluate((t) => window.canvas.timeline.seek(t), rollT);
+    await page.keyboard.press('k');
+    await page.waitForTimeout(300);
+    const rk = JSON.parse(cli('doc')).timeline.keys.find((k) => Math.abs(k.t - rollT) < 1e-3);
+    ok(rk && Math.abs(rk.roll - r.roll) < 0.05, `K keys the roll (${rk?.roll})`);
+    cli('view', 'shot'); await page.waitForTimeout(200);
+    ok(Math.abs((await page.evaluate(() => window.canvas.viewport.shotRoll)) - rk.roll) < 0.05, 'the shot camera plays the keyed roll back');
+    cli('key-rm', rk.id); cli('view', 'free');
+    await page.evaluate(() => { window.canvas.viewport.freeRoll = 0; window.canvas.store.set({ key: null }); });
+    await page.waitForTimeout(200);
+  }
+
   // orchestration helpers: scoped batches, per-area listing, snapshots from the agent's own camera
   const fsx = await import('node:fs');
   const scoped = path.join(dir, 'scoped.json');
@@ -267,24 +341,54 @@ try {
   const freePose = await page.evaluate(() => ({ p: window.canvas.viewport.freeCam.position.toArray(), f: window.canvas.viewport.freeCam.fov }));
   ok(freePose.p.every((v, i) => Math.abs(v - shotPose.p[i]) < 1e-3) && Math.abs(freePose.f - shotPose.f) < 1e-3, 'back to free with a key selected keeps the shot position and lens');
 
-  // Cut at the playhead: this shot ends there and a new shot carries on from the same framing
+  // + New shot row: a click adds the next shot on this shot's last frame; a drag from the playhead draws an
+  // overlapping one, and the confirmation's button ends the first shot there (what Cut used to do)
   const tlBefore = JSON.parse(cli('doc')).timeline, fr = tlBefore.fps;
   let tc = null;
   for (let f = Math.round((tlBefore.duration * fr) / 2); f < tlBefore.duration * fr - 2; f++) {
     if (!tlBefore.keys.some((k) => Math.abs(k.t - f / fr) < 2.5 / fr)) { tc = +(f / fr).toFixed(3); break; }
   }
-  cli('seek', String(tc)); await page.waitForTimeout(150);
-  await page.click('.tl-bar button[title^="Cut at the playhead"]');
+  ok(await page.locator('.tl-bar button', { hasText: /^Cut$/ }).count() === 0, 'the bar has no Cut button');
+  // the timeline bar steps down (icon-only buttons, shorter readouts) instead of squeezing its controls together
+  const barAt = async (w) => {
+    await page.setViewportSize({ width: w, height: 800 });
+    await page.waitForFunction(() => { const b = document.querySelector('.tl-bar'); return b.scrollWidth <= b.clientWidth + 0.5; }, null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(100);
+    return page.evaluate(() => { const b = document.querySelector('.tl-bar'); return { over: b.scrollWidth - b.clientWidth, fit: [1, 2, 3].filter((i) => b.classList.contains(`is-fit${i}`)).length }; });
+  };
+  await page.evaluate(() => { const s = window.canvas.store; s.set({ key: s.doc.timeline.keys[0]?.id || null }); });
+  const barWide = await barAt(1600), barNarrow = await barAt(720);
+  ok(barWide.fit === 0 && barWide.over <= 0, `timeline bar keeps its labels when there is room (${JSON.stringify(barWide)})`);
+  ok(barNarrow.fit > 0 && barNarrow.over <= 0, `timeline bar steps down to fit a narrow window (${JSON.stringify(barNarrow)})`);
+  const barTiny = await barAt(480);
+  const inMenu = await page.evaluate(() => !!document.querySelector('.tl-more-pop .tl-shot') && getComputedStyle(document.querySelector('.tl-more')).display !== 'none');
+  ok(inMenu, `narrowest: less used controls move into the ⋯ menu (${JSON.stringify(barTiny)})`);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForFunction(() => !!document.querySelector('.tl-bar > .tl-shot'));
+  ok(true, 'and come back to the bar when there is room');
+  const nb = await page.locator('.tl-track').boundingBox();
+  const nY = nb.y + await page.evaluate(() => window.canvas.timeline.newRowY());
+  const nX = async (a) => nb.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
+  await page.mouse.click(nb.x + 40, nY);
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
-  const dCut = JSON.parse(cli('doc')), first = dCut.shots[0].timeline, second = dCut.timeline;
-  const endKey = first.keys[first.keys.length - 1];
-  ok(dCut.shot === 'shot-2' && first.duration === tc && second.start === tc && Math.abs(first.duration + second.duration - tlBefore.duration) < 1e-6
-    && endKey.t === tc && second.keys[0].t === 0 && second.keys[0].position.every((v, i) => Math.abs(v - endKey.position[i]) < 1e-6),
-    'Cut splits the shot at the playhead: a new shot carries on from the same framing');
-  ok(await page.evaluate(() => window.canvas.store.state.key) === second.keys[0].id, 'after a cut the new shot\'s first key is selected');
+  const dNext = JSON.parse(cli('doc')), lastK = [...tlBefore.keys].sort((a, b) => a.t - b.t).pop();
+  ok(dNext.shot === 'shot-2' && dNext.timeline.start === tlBefore.duration && dNext.timeline.keys.length === 1
+    && dNext.timeline.keys[0].position.every((v, i) => Math.abs(v - lastK.position[i]) < 1e-3),
+    'clicking + New shot adds the next shot, starting on the last frame');
   cli('undo'); cli('shot', '1');
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
-  ok(JSON.parse(cli('doc')).timeline.keys.length === tlBefore.keys.length, 'one undo removes the whole cut');
+  cli('seek', String(tc)); await page.waitForTimeout(150);
+  await page.mouse.move(await nX(tc + 0.01), nY); await page.mouse.down();
+  await page.mouse.move(await nX(tc + 0.8), nY, { steps: 4 }); await page.mouse.move(await nX(tc + 1.5), nY, { steps: 4 }); await page.mouse.up();
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
+  const dDrag = JSON.parse(cli('doc'));
+  ok(dDrag.timeline.start === tc && Math.abs(dDrag.timeline.duration - 1.5) < 0.1, `dragging across the row draws a shot from the playhead (${dDrag.timeline.start}, ${dDrag.timeline.duration})`);
+  await page.click('.cc-toast button');
+  await page.waitForFunction((tc) => window.canvas.store.doc.shots[0].timeline?.duration === tc, tc);
+  ok(true, 'the confirmation ends the first shot where the new one starts');
+  cli('undo'); cli('undo'); cli('shot', '1');
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+  ok(JSON.parse(cli('doc')).timeline.duration === tlBefore.duration, 'undo removes the trim and the new shot');
   // a hold key inside a shot still cuts within the clip; the pair is drawn as one split key either side
   // of the cut line and each half selects its own key
   cli('key', '--t', String(tc), '--pos', '5,2,5', '--target', '0,1,0', '--ease', 'hold');
@@ -293,8 +397,9 @@ try {
   const tlCut = JSON.parse(cli('doc')).timeline;
   const ka = tlCut.keys.find((k) => Math.abs(k.t - tc) < 1e-3), kb = tlCut.keys.find((k) => Math.abs(k.t - (tc + 1 / fr)) < 2e-3);
   const tb = await page.locator('.tl-track').boundingBox();
-  const txOf = (t) => tb.x + 14 + (t / tlCut.duration) * (tb.width - 28);
-  const cutX = (txOf(ka.t) + txOf(kb.t)) / 2, midY = tb.y + 18 + (tb.height - 18) / 2;
+  const txOf = (t) => tb.x + xs[t];
+  const xs = await page.evaluate(([a, b]) => ({ [a]: window.canvas.timeline.xAt(a), [b]: window.canvas.timeline.xAt(b) }), [ka.t, kb.t]);
+  const cutX = (txOf(ka.t) + txOf(kb.t)) / 2, midY = tb.y + await page.evaluate(() => window.canvas.timeline.yAt());
   await page.mouse.click(cutX - 3, midY); await page.waitForTimeout(120);
   const leftSel = await page.evaluate(() => window.canvas.store.state.key);
   await page.mouse.click(cutX + 4, midY); await page.waitForTimeout(120);
@@ -441,7 +546,8 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.length === 4);
   await page.evaluate(() => window.canvas.store.set({ key: null, selection: null }));
   const mb = await page.locator('.tl-track').boundingBox();
-  const mx = (t) => mb.x + 14 + (t / 4) * (mb.width - 28), my = mb.y + mb.height / 2 + 6;
+  const mxs = await page.evaluate(() => [0, 0.5, 1, 1.25, 1.5, 2, 2.5, 2.75, 3].map((t) => [t, window.canvas.timeline.xAt(t)]));
+  const mx = (t) => mb.x + new Map(mxs).get(t), my = mb.y + await page.evaluate(() => window.canvas.timeline.yAt());
   const kt = () => JSON.parse(cli('doc')).timeline.keys.map((k) => k.t).sort((a, b) => a - b);
   await page.mouse.click(mx(0), my); await page.waitForTimeout(80);
   await page.keyboard.down('Shift'); await page.mouse.click(mx(2), my); await page.keyboard.up('Shift');
@@ -469,16 +575,17 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
   const tr = await page.locator('.tl-track').boundingBox();
   ok(tr.height > 80, `with two shots the key track stacks them (${Math.round(tr.height)} px tall)`);
+  const xA = async (a) => tr.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
   // lanes: ruler 18 px, then shot-1 (24 px), then the active close (40 px); names in a 96 px header column
-  await page.mouse.click(tr.x + tr.width * 0.3, tr.y + 26);
+  await page.mouse.click(await xA(0.5), tr.y + 26);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking another shot\'s row switches to it');
   // the ruler is scrubbable across shots: close picks up the action at 1 s, so 1.5 s in is close at 0.5 s
-  await page.mouse.click(tr.x + tr.width * 0.75, tr.y + 8);
+  await page.mouse.click(await xA(1.5), tr.y + 8);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close' && Math.abs(window.canvas.store.state.time - 0.5) < 0.1);
   ok(true, 'clicking the ruler at a moment another shot covers switches to it there');
   // and so is the empty part of the active row (close is active, lane 2: 18 + 24); 0.25 s in is shot-1
-  await page.mouse.click(tr.x + tr.width * 0.25, tr.y + 18 + 24 + 30);
+  await page.mouse.click(await xA(0.5), tr.y + 18 + 24 + 30);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking the empty part of the active row switches to the shot that covers that moment');
   // now close is the inactive second row (top 18 + 40): drag it sideways so it picks up the action later
@@ -486,8 +593,8 @@ try {
   cli('shot-set', 'close', '--start', '0');
   await page.waitForFunction(() => !window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start);
   const ry = tr.y + 18 + 40 + 12;
-  await page.mouse.move(tr.x + tr.width * 0.2, ry); await page.mouse.down();
-  await page.mouse.move(tr.x + tr.width * 0.45, ry, { steps: 6 }); await page.mouse.up();
+  await page.mouse.move(await xA(0.4), ry); await page.mouse.down();
+  await page.mouse.move(await xA(0.9), ry, { steps: 6 }); await page.mouse.up();
   await page.waitForFunction(() => (window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start || 0) > 0.1);
   ok(true, `dragging a shot's row sets where it picks up the action`);
   await page.waitForTimeout(200);
@@ -543,10 +650,10 @@ try {
   await newTab.waitForSelector('[data-hint=first-build]');
   ok(!(await newTab.isVisible('.start-card')), 'the start card goes away with the first object');
   const after = await newTab.evaluate(() => window.canvas.viewport.freeOrbit.target.toArray());
-  ok(Math.abs(after[0] - 20) < 0.5 && Math.abs(after[2] + 10) < 0.5 && before.join() !== after.join(), 'the agent\'s newTab build is framed in free view');
+  ok(Math.abs(after[0] - 20) < 0.5 && Math.abs(after[2] + 10) < 0.5 && before.join() !== after.join(), 'the agent\'s first build is framed in free view');
   await newTab.click('[data-hint=first-build] >> text=View shot');
   ok(await newTab.evaluate(() => window.canvas.store.state.view) === 'shot', 'the first-build hint\'s View shot button switches to the shot');
-  ok(await newTab.isVisible('[data-hint=shot-view]'), 'the newTab time in Shot view shows the shot hint');
+  ok(await newTab.isVisible('[data-hint=shot-view]'), 'the first time in Shot view shows the shot hint');
   await newTab.click('[data-hint=shot-view] >> text=Got it');
   await newTab.evaluate(() => window.canvas.store.set({ view: 'free' }));
 
