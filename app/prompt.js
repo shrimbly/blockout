@@ -74,7 +74,8 @@ export function mountPrompt(root, { viewport, corner }) {
     emptyState = key;
     const starters = h('div.chat-starters', {}, ...STARTERS.map((text) =>
       h('button.chat-starter', { type: 'button', onClick: () => { input.value = text; input.dispatchEvent(new Event('input')); input.focus(); } }, text)));
-    const off = [...offState({ launch, listenStale }), h('p.chat-empty-hint', {}, 'You can write now: messages wait here until your agent connects.')];
+    const off = [...offState({ launch, listenStale }), h('p.chat-empty-hint', {}, 'You can write now: messages wait here until your agent connects.'),
+      h('div.chat-empty-label', {}, 'Try'), starters];
     const on = [
       h('div.chat-empty-title', {}, state === 'working' ? 'Your agent is busy' : 'Your agent is listening'),
       h('p', {}, state === 'working'

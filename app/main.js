@@ -18,7 +18,7 @@ const renderer = createRenderer(viewport);
 const timeline = mountTimeline($('timeline'), { viewport, exporter: renderer });
 const prompt = mountPrompt($('prompt'), { viewport, corner: $('corner') });
 audio.attach();
-mountOnboarding({ viewport, prompt });
+mountOnboarding({ viewport });
 window.canvas = { store, viewport, renderer, timeline, audio }; // handy in the devtools console
 
 // ---------- selection chip (top left) ----------

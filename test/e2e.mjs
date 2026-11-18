@@ -536,12 +536,12 @@ try {
   await newTab.goto(`http://127.0.0.1:${PORT}`);
   await newTab.waitForFunction(() => window.canvas?.store.doc);
   ok(await newTab.isVisible('.start-card'), 'an empty scene shows the start card');
-  await newTab.click('.start-card .chat-starter >> nth=1');
-  ok(/orbit around a car/.test(await newTab.inputValue('.chat-input')), 'a starter on the card fills the chat box');
+  await newTab.click('.chat-empty .chat-starter >> nth=1');
+  ok(/orbit around a car/.test(await newTab.inputValue('.chat-input')), 'the chat offers starter prompts even before the agent listens; one fills the chat box');
   const before = await newTab.evaluate(() => window.canvas.viewport.freeCam.position.toArray());
   cli('add', 'box', '--name', 'shed', '--size', '3,2.5,3', '--pos', '20,0,-10');
   await newTab.waitForSelector('[data-hint=first-build]');
-  ok(!(await newTab.isVisible('.start-card')), 'the start card goes away with the newTab object');
+  ok(!(await newTab.isVisible('.start-card')), 'the start card goes away with the first object');
   const after = await newTab.evaluate(() => window.canvas.viewport.freeOrbit.target.toArray());
   ok(Math.abs(after[0] - 20) < 0.5 && Math.abs(after[2] + 10) < 0.5 && before.join() !== after.join(), 'the agent\'s newTab build is framed in free view');
   await newTab.click('[data-hint=first-build] >> text=View shot');
