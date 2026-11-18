@@ -6,6 +6,62 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mannequin } from './mannequin.js';
 import { blockman } from './blockman.js';
 import { PERSON_HEIGHT } from '/core/doc.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+// ---------- imported models (.glb in the scene's models/) ----------
+// A model is drawn like every other object: one clay mesh in the object's colour. Its meshes are merged
+// into one triangle soup in model space, textures and materials dropped, pivot moved to the bottom centre.
+const models = new Map(); // file -> { state: 'loading' | 'ready' | 'error', geo, size, triangles, error, promise }
+let loader;
+function gltfLoader() {
+  if (loader) return loader;
+  const draco = new DRACOLoader().setDecoderPath('/vendor/three/examples/jsm/libs/draco/gltf/');
+  loader = new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder);
+  return loader;
+}
+function mergeModel(root) {
+  root.updateMatrixWorld(true);
+  const chunks = [];
+  const v = new THREE.Vector3();
+  root.traverse((m) => {
+    if (!m.isMesh || !m.geometry?.attributes.position) return;
+    if (m.material && [].concat(m.material).every((x) => x.visible === false)) return;
+    const pos = m.geometry.attributes.position, index = m.geometry.index;
+    const n = index ? index.count : pos.count;
+    const out = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(pos, index ? index.getX(i) : i).applyMatrix4(m.matrixWorld);
+      out[i * 3] = v.x; out[i * 3 + 1] = v.y; out[i * 3 + 2] = v.z;
+    }
+    chunks.push(out);
+  });
+  const all = new Float32Array(chunks.reduce((s, c) => s + c.length, 0));
+  let o = 0;
+  for (const c of chunks) { all.set(c, o); o += c.length; }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(all, 3));
+  geo.computeBoundingBox();
+  const b = geo.boundingBox;
+  if (!b.isEmpty()) geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+  geo.computeBoundingBox();
+  return { geo, size: geo.boundingBox.isEmpty() ? [0, 0, 0] : geo.boundingBox.getSize(new THREE.Vector3()).toArray(), triangles: all.length / 9 };
+}
+/** 'none' | 'loading' | 'ready' | 'error' for a model file. */
+export const modelState = (file) => models.get(file)?.state || 'none';
+export const modelError = (file) => models.get(file)?.error || null;
+/** Start loading a model file (once); resolves when it is ready or has failed. */
+export function loadModel(file) {
+  let m = models.get(file);
+  if (m) return m.promise;
+  m = { state: 'loading' };
+  models.set(file, m);
+  m.promise = gltfLoader().loadAsync(`/models/${encodeURIComponent(file)}`)
+    .then((gltf) => { Object.assign(m, mergeModel(gltf.scene), { state: 'ready' }); })
+    .catch((e) => { Object.assign(m, { state: 'error', error: e?.message || String(e) }); });
+  return m.promise;
+}
 
 const up = (g, y) => g.translate(0, y, 0);
 
@@ -45,6 +101,13 @@ export const BUILDERS = {
   person({ h, body, detail }) {
     const H = h ?? PERSON_HEIGHT[body] ?? PERSON_HEIGHT.male;
     return (detail === 'low' ? blockman(body) : mannequin(body)).clone().scale(H, H, H);
+  },
+  // An imported .glb (see loadModel): empty until its file has loaded, then scaled to h tall if h is set.
+  model({ file, h }) {
+    const m = models.get(file);
+    if (m?.state !== 'ready') return new THREE.BufferGeometry();
+    const k = h && m.size[1] > 0 ? h / m.size[1] : 1;
+    return m.geo.clone().scale(k, k, k);
   },
 };
 

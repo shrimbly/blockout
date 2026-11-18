@@ -36,6 +36,7 @@ export function createRenderer(viewport) {
   const stem = (name, s) => safeName(name || (store.doc.shots.length > 1 ? `${store.doc.meta.name}-${s.id}` : store.doc.meta.name));
 
   async function snapshot({ t = store.state.time, view = 'shot', name, width, height, grid, from, target, fov, shot } = {}) {
+    await viewport.ready(); // imported models still loading
     const [w, hh] = size({ width, height });
     const timeline = pick(shot).timeline;
     const canvas = viewport.renderShot(t, w, hh, { view, grid, from, target, fov, timeline });
@@ -46,6 +47,7 @@ export function createRenderer(viewport) {
   }
 
   async function storyboard({ frames = 8, cols = 4, width = 480, shot } = {}) {
+    await viewport.ready(); // imported models still loading
     const s = pick(shot), tl = s.timeline;
     const A = store.doc.meta.width / store.doc.meta.height;
     const cw = width, ch = Math.round(width / A), rows = Math.ceil(frames / cols), gap = 8, label = 18;
@@ -72,6 +74,7 @@ export function createRenderer(viewport) {
    * together into one video at one frame rate (fps, else the active shot's) with each shot's audio.
    */
   async function exportVideo({ fps, width, height, grid, name, shot, sequence } = {}) {
+    await viewport.ready(); // imported models still loading
     if (store.state.exporting) throw new Error('an export is already running');
     const shots = sequence ? shotList(store.doc) : [pick(shot)];
     const empty = shots.find((s) => !s.timeline.keys.length);

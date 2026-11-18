@@ -283,3 +283,23 @@ code { font-family: var(--cc-mono); font-size: 11px; }
 .tl-objkey > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-odot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--cc-accent); flex: none; box-sizing: border-box; }
 .tl-objkey.is-animated .tl-odot { background: var(--cc-accent); }
+
+/* first run: start card (empty scene) and one-time hints */
+.start-card { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -60%); width: 340px; max-width: calc(100vw - 32px); padding: 16px 18px; z-index: 9;
+  text-align: center; color: var(--cc-text-dim); font-size: 12px; line-height: 1.5; animation: cc-in 160ms var(--cc-ease); }
+body.chat-open .start-card { left: calc((100vw - 352px) / 2); }
+.start-card[hidden] { display: none; }
+.start-title { color: var(--cc-text); font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.start-text { margin: 0; }
+.start-drop { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--cc-line); color: var(--cc-text-faint); font-size: var(--cc-size); }
+.hint { position: fixed; bottom: calc(128px + var(--stack-h, 0px)); left: 50%; transform: translateX(-50%); z-index: 22; display: flex; align-items: center; gap: 6px;
+  padding: 4px 4px 4px 12px; width: max-content; max-width: min(640px, calc(100vw - 48px)); animation: cc-in 160ms var(--cc-ease); }
+body.chat-open .hint { left: calc((100vw - 352px) / 2); max-width: min(640px, calc(100vw - 400px)); }
+body.has-audio .hint { bottom: calc(160px + var(--stack-h, 0px)); }
+.hint-text { color: var(--cc-text); line-height: 1.4; padding: 3px 0; }
+.hint .cc-kbd { margin: 0 1px; }
+.hint .cc-btn { flex: none; }
+@media (max-width: 900px) {
+  .start-card, body.chat-open .start-card { left: 50%; }
+  .hint, body.chat-open .hint { left: 50%; max-width: calc(100vw - 24px); }
+}

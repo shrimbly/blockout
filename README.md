@@ -86,6 +86,7 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 |---|---|
 | Click | aim the camera at the clicked point (object surface or ground). In Shot view, press `K` to key the new aim. |
 | Ctrl-click (or ⌘-click) | select an object; on empty space, deselect |
+| Drop a `.glb` | import a model where it lands (see [Importing models](#importing-models)) |
 | Drag | orbit · right-drag pan · scroll zoom · double-click frames the selection |
 | Hold right mouse + `W` `A` `S` `D` | fly: `W` `A` `S` `D` (or arrows) move, `Q` `E` down / up, `Z` `X` roll (Dutch tilt), the mouse looks around, `Shift` faster, `Alt` slower, scroll sets the fly speed. In Shot view it reframes the shot camera (press `K` to key it). Let go and the keys are shortcuts again. |
 | Roll field (°, next to Lens) | the roll (Dutch tilt) of the selected key and the free view, like Lens. New keys take the view's roll. |
@@ -122,6 +123,14 @@ Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-c
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
 the scene size and fps and encodes an H.264 MP4 in the browser. Shift-click **Export** (or
 `canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
+
+## Importing models
+
+Drop a `.glb` file on the canvas and it lands where you dropped it, or ask your agent ("use this car:
+~/Downloads/car.glb"); it runs `canvas add model <file> --h <height>`. Models are copied into `scenes/models/`
+and drawn in clay like the rest of the blockout (textures are dropped), with their pivot at the bottom centre.
+They move, animate, save and export like any other object. Draco- and meshopt-compressed files work; a
+`.gltf`, `.fbx` or `.obj` needs converting to a single `.glb` first.
 
 ## Saving and loading
 

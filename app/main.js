@@ -10,6 +10,7 @@ import { h, button, segmented, panel, toast, kbd } from './ui/kit.js';
 import { mountSaves } from './saves.js';
 import { audio } from './audio.js';
 import controls from './controls/index.js';
+import { mountOnboarding } from './onboarding.js';
 
 const $ = (id) => document.getElementById(id);
 const viewport = new Viewport($('stage'));
@@ -17,6 +18,7 @@ const renderer = createRenderer(viewport);
 const timeline = mountTimeline($('timeline'), { viewport, exporter: renderer });
 const prompt = mountPrompt($('prompt'), { viewport, corner: $('corner') });
 audio.attach();
+mountOnboarding({ viewport });
 window.canvas = { store, viewport, renderer, timeline, audio }; // handy in the devtools console
 
 // ---------- selection chip (top left) ----------
@@ -86,6 +88,34 @@ function mountControls() {
     } catch (e) { console.error(e); toast(`control "${c.id}" failed: ${e.message}`, { kind: 'error' }); }
   }
 }
+
+// ---------- drop a .glb on the viewport: import it where it lands ----------
+const isGlb = (f) => /\.glb$/i.test(f.name);
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+$('stage').addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+$('stage').addEventListener('drop', async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  const files = [...e.dataTransfer.files];
+  const glbs = files.filter(isGlb);
+  if (!glbs.length) return toast(files.some((f) => /\.gltf$/i.test(f.name)) ? 'Export the model as a single .glb (a .gltf keeps its data in separate files)' : 'Drop a .glb model here', { kind: 'error' });
+  const at = viewport.pointAt(e.clientX, e.clientY, { tops: true }) || { x: 0, y: 0, z: 0 };
+  let last = null;
+  for (const [i, f] of glbs.entries()) {
+    const res = await fetch(`/api/model?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f }).then((r) => r.json()).catch((err) => ({ error: err.message }));
+    if (!res.ok) { toast(res.error || `could not upload ${f.name}`, { kind: 'error', ms: 6000 }); continue; }
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    // several at once: side by side along x, each a little past the last one's width
+    const [r] = await store.op({ op: 'add', type: 'model', file: res.file, position: [r3(at.x + i * ((res.size?.[0] || 1) + 0.5)), r3(at.y), r3(at.z)] }, `import ${f.name}`).catch(() => [null]);
+    if (!r) continue;
+    last = r.id;
+    if (res.size && (res.size[1] > 200 || res.size[1] < 0.02)) toast(`${f.name} is ${+res.size[1].toFixed(3)} m tall as authored: probably not in metres. Ask your agent to scale it to its real height.`, { ms: 7000 });
+  }
+  if (last) store.set({ selection: last });
+});
+// a file dropped anywhere else must not make the browser navigate away from the canvas
+addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener('drop', (e) => { if (hasFiles(e)) e.preventDefault(); });
 
 // ---------- actions ----------
 async function duplicate() {
@@ -177,6 +207,7 @@ function connect() {
     if (source === 'agent' || source === 'file') store.set({ camDirty: false });
     if (store.state.key && !store.keyById(store.state.key)) store.set({ key: null });
     if (store.state.time > doc.timeline.duration) store.set({ time: doc.timeline.duration });
+    store.lastSource = source;
     store.emit('doc', doc);
   });
   // listen: listen mode with a live agent behind it; listenStale: on, but its agent has gone quiet

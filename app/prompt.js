@@ -74,7 +74,8 @@ export function mountPrompt(root, { viewport, corner }) {
     emptyState = key;
     const starters = h('div.chat-starters', {}, ...STARTERS.map((text) =>
       h('button.chat-starter', { type: 'button', onClick: () => { input.value = text; input.dispatchEvent(new Event('input')); input.focus(); } }, text)));
-    const off = [...offState({ launch, listenStale }), h('p.chat-empty-hint', {}, 'You can write now: messages wait here until your agent connects.')];
+    const off = [...offState({ launch, listenStale }), h('p.chat-empty-hint', {}, 'You can write now: messages wait here until your agent connects.'),
+      h('div.chat-empty-label', {}, 'Try'), starters];
     const on = [
       h('div.chat-empty-title', {}, state === 'working' ? 'Your agent is busy' : 'Your agent is listening'),
       h('p', {}, state === 'working'
@@ -410,5 +411,7 @@ export function mountPrompt(root, { viewport, corner }) {
   refresh();
   setOpen(open);
 
-  return { focus: () => { if (!open) setOpen(true); input.focus(); }, input, setOpen, toggleBtn };
+  // put text in the message box (a starter prompt), ready to edit or send
+  const fill = (text) => { if (!open) setOpen(true); input.value = text; input.dispatchEvent(new Event('input')); input.focus(); };
+  return { focus: () => { if (!open) setOpen(true); input.focus(); }, fill, input, setOpen, toggleBtn };
 }

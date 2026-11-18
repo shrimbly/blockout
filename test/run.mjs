@@ -427,3 +427,30 @@ test('shots: timeline.start picks up the shared action later; object key ops use
   ({ doc } = applyOps(doc, { op: 'timeline', start: 0 }));
   assert.equal(doc.timeline.start, undefined);
 });
+
+test('model: a .glb by file name, named after its file, h scales it; the file name is checked', () => {
+  const { doc, results } = applyOps(createDoc(), [
+    { op: 'add', type: 'model', file: 'old-car-3f9a1c2e.glb', h: 1.5, position: [2, 0, 0] },
+    { op: 'add', type: 'model', file: 'old-car-3f9a1c2e.glb', name: 'Hero car' },
+  ]);
+  assert.deepEqual(results.map((r) => r.id), ['old-car', 'hero-car']);
+  assert.deepEqual(doc.objects[0].params, { file: 'old-car-3f9a1c2e.glb', h: 1.5 });
+  assert.throws(() => applyOps(doc, { op: 'add', type: 'model' }), /needs its file/);
+  assert.throws(() => applyOps(doc, { op: 'add', type: 'model', file: '../secret.glb' }), /\.glb file name/);
+  assert.throws(() => applyOps(doc, { op: 'add', type: 'model', file: 'tree.obj' }), /\.glb file name/);
+  assert.throws(() => applyOps(doc, { op: 'update', id: 'old-car', file: null }), /needs its file/);
+  const { doc: d2 } = applyOps(doc, { op: 'update', id: 'old-car', size: 3 });
+  assert.equal(d2.objects[0].params.h, 3);
+  assert.equal(migrate(JSON.parse(JSON.stringify(d2))).objects[0].params.file, 'old-car-3f9a1c2e.glb');
+});
+
+test('glbInfo reads a .glb\'s size through its node transforms and rejects other files', async () => {
+  const { glbInfo } = await import('../server/glb.mjs');
+  const { boxGlb } = await import('./glb-fixture.mjs');
+  const i = glbInfo(boxGlb({ w: 2, h: 3, d: 4, translation: [5, 1, 0], scale: [100, 100, 100] }));
+  assert.deepEqual(i.size, [200, 300, 400]);
+  assert.deepEqual(i.min, [-95, 1, -200]);
+  assert.equal(i.triangles, 12);
+  assert.deepEqual(glbInfo(boxGlb({ w: 1, h: 2, d: 1 })).size, [1, 2, 1]);
+  assert.throws(() => glbInfo(Buffer.from('{"asset":{"version":"2.0"}} padding padding')), /not a \.glb/);
+});
