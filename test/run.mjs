@@ -149,10 +149,10 @@ test('migrate fills defaults and round-trips', () => {
 });
 
 test('migrate drops params this version does not know instead of refusing the scene', () => {
-  const d = migrate({ objects: [{ id: 'fig', type: 'person', params: { body: 'female', pose: 'sit' } }] });
+  const d = migrate({ objects: [{ id: 'fig', type: 'person', params: { body: 'female', wingspan: 2 } }] });
   assert.equal(d.objects[0].params.body, 'female');
-  assert.ok(!('pose' in d.objects[0].params));
-  assert.throws(() => applyOps(d, { op: 'add', type: 'person', params: { pose: 'sit' } }), /no param "pose"/);
+  assert.ok(!('wingspan' in d.objects[0].params));
+  assert.throws(() => applyOps(d, { op: 'add', type: 'person', params: { wingspan: 2 } }), /no param "wingspan"/);
 });
 
 test('every primitive has a geometry builder', () => {
