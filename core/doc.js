@@ -943,6 +943,10 @@ export function migrate(input) {
     let params = o.params;
     // People made before bodies existed were all stored at h 1.8; let them use their body's usual height.
     if (o.type === 'person' && params && params.body == null && params.h === 1.8) params = { ...params, h: null };
+    // A saved file may carry params this version does not have (from an older or unmerged build, e.g. a
+    // person's pose); drop them so the rest of the scene still opens instead of refusing the whole file.
+    const known = PRIMITIVES[o.type]?.params;
+    if (known && params) params = Object.fromEntries(Object.entries(params).filter(([k]) => k in known));
     const { doc: tmp } = applyOps(doc, { op: 'add', ...o, params });
     doc.objects = tmp.objects;
   }
