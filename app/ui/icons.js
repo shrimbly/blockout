@@ -45,6 +45,7 @@ export const ICONS = {
   clock: s('<circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/>'),
   minus: s('<path d="M4 8h8"/>'),
   compose: s('<path d="M13.5 8.5v4a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12.5V4A1.5 1.5 0 0 1 4 2.5h4"/><path d="M11.5 2.5l2 2L8 10H6V8z"/>'),
+  cube: s('<path d="M8 1.8 13.5 4.8v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8 8 7.8l5.5-3M8 7.8v6.4"/>'),
   image: s('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><circle cx="5.75" cy="6" r="1.25"/><path d="m2.5 12 3.5-3.5 2.5 2.5 2-2 3 3"/>'),
   plus: s('<path d="M4 8h8M8 4v8"/>'),
   save: s('<path d="M3.5 2.5h7l2 2v9h-9z"/><path d="M5.5 2.5v3h4v-3M5.5 13.5v-4h5v4"/>'),

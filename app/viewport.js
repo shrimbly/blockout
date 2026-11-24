@@ -579,6 +579,16 @@ export class Viewport {
     if (store.state.view === 'shot') store.set({ camDirty: true });
   }
 
+  /** Where the active camera is focused, on something to stand on: straight below its aim point, the first
+   *  upward-facing surface (a table top, a floor), else the ground. Used to place a model dropped on the canvas. */
+  focusPoint() {
+    const t = this.activeOrbit.target;
+    const ray = new THREE.Raycaster(new THREE.Vector3(t.x, Math.max(t.y, 0) + 0.01, t.z), new THREE.Vector3(0, -1, 0));
+    const hit = ray.intersectObjects(this._pickables(), false)
+      .find((x) => x.face && x.face.normal.clone().transformDirection(x.object.matrixWorld).y > 0.7);
+    return new THREE.Vector3(t.x, hit ? Math.max(0, hit.point.y) : 0, t.z);
+  }
+
   /** Smoothly turn the active camera to look at a world point (it stays where it is). */
   aimAt(point, ms = 280) {
     const orbit = this.activeOrbit;

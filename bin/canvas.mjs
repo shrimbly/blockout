@@ -300,8 +300,9 @@ const keyRef = (s) => (/^\d+$/.test(s) ? { index: Number(s) } : { id: s });
 
 function formatPrompt(p) {
   const c = p.context || {};
-  const lines = [`[canvas prompt ${p.id}] ${p.text || '(no text, see the attached images)'}`];
+  const lines = [`[canvas prompt ${p.id}] ${p.text || `(no text, see the attached ${p.images?.length ? 'images' : 'models'})`}`];
   if (p.images?.length) lines.push(`images attached (open each with your Read tool): ${p.images.map((i) => i.path).join(' | ')}`);
+  if (p.models?.length) lines.push(`GLB models attached, NOT in the scene yet (add one only if the message asks, with: canvas import <path> [--pos x,y,z]): ${p.models.map((m) => `${m.name} → ${m.path}`).join(' | ')}`);
   if (c.selection?.length) lines.push(`selected: ${c.selection.join(' | ')}`);
   if (c.time != null) lines.push(`${c.shot ? `shot: ${c.shot}, ` : ''}playhead: ${Number(c.time).toFixed(2)}s of ${c.duration}s, view: ${c.view}${c.key ? `, key: ${c.key}` : ''}`);
   if (c.camera) lines.push(`camera: pos=${c.camera.position.map((v) => +v.toFixed(2)).join(',')} target=${c.camera.target.map((v) => +v.toFixed(2)).join(',')} fov=${+c.camera.fov.toFixed(1)}`);
@@ -772,10 +773,10 @@ const commands = {
     }
     const { chat } = await api('GET', `/api/chats/get?id=${encodeURIComponent(pos[0])}`);
     if (flags.json) return out(chat);
-    const items = [...chat.prompts.map((p) => ({ at: p.at, who: 'user', text: p.text, images: p.images })), ...chat.messages.map((m) => ({ at: m.at, who: m.from || 'agent', text: m.text, files: m.files }))]
+    const items = [...chat.prompts.map((p) => ({ at: p.at, who: 'user', text: p.text, images: p.images, models: p.models })), ...chat.messages.map((m) => ({ at: m.at, who: m.from || 'agent', text: m.text, files: m.files }))]
       .sort((a, b) => a.at - b.at);
     out([`${chat.title}  (${when(chat.startedAt)} to ${when(chat.endedAt)})`, '',
-      ...items.map((x) => `${x.who}: ${x.text || ''}${x.images?.length ? ` [images: ${x.images.map((i) => i.path).join(' | ')}]` : ''}${x.files?.length ? ` [attached: ${x.files.map((i) => i.path).join(' | ')}]` : ''}`)].join('\n'));
+      ...items.map((x) => `${x.who}: ${x.text || ''}${x.images?.length ? ` [images: ${x.images.map((i) => i.path).join(' | ')}]` : ''}${x.models?.length ? ` [models: ${x.models.map((i) => i.path).join(' | ')}]` : ''}${x.files?.length ? ` [attached: ${x.files.map((i) => i.path).join(' | ')}]` : ''}`)].join('\n'));
   },
   async say({ pos, flags }) {
     const text = pos.join(' ');

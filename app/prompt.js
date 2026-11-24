@@ -7,6 +7,7 @@ import { describe } from '/core/doc.js';
 import { store } from './store.js';
 import { askCard } from './ask.js';
 import { progressCard } from './progress.js';
+import { isGlb, uploadModel } from './models.js';
 
 const OPEN_KEY = 'cc-chat-open';
 
@@ -91,8 +92,8 @@ export function mountPrompt(root, { viewport, corner }) {
   // ---------- composer ----------
   const input = h('textarea.chat-input', { rows: 1, placeholder: 'Ask your agent…', spellcheck: false, 'aria-label': 'Message your agent' });
   const send = h('button.cc-btn.cc-btn--primary.cc-btn--icon.chat-send', { type: 'button', title: 'Send (Enter) · new line (Shift+Enter)', disabled: true }, icon('send'));
-  const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, hidden: true });
-  const attachBtn = h('button.cc-btn.cc-btn--ghost.cc-btn--icon.chat-attach', { type: 'button', title: 'Add images (or paste / drop them)' }, icon('image'));
+  const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,.glb,model/gltf-binary', multiple: true, hidden: true });
+  const attachBtn = h('button.cc-btn.cc-btn--ghost.cc-btn--icon.chat-attach', { type: 'button', title: 'Add images or .glb models (or paste / drop them)' }, icon('image'));
   const tray = h('div.chat-tray', { hidden: true });
   // A note above the composer when a button elsewhere started a request here (store.emit('compose', { text, hint })).
   const hint = h('div.chat-hint', { hidden: true, role: 'note' });
@@ -149,8 +150,10 @@ export function mountPrompt(root, { viewport, corner }) {
     };
   }
 
-  // ---------- image attachments: uploaded as soon as they are added, sent with the next message ----------
-  let attachments = []; // { id, preview, file?, pending, error? }
+  // ---------- attachments: uploaded as soon as they are added, sent with the next message ----------
+  // Images go to the chat's uploads; .glb models go to the scene's models/ but are not added to the scene:
+  // the agent gets their paths and adds one only if the message asks (dropped on the canvas, a model is added).
+  let attachments = []; // { id, kind: 'image'|'model', preview?, name?, file?, pending, error? }
   const MAX_SIDE = 2000;
   async function toDataUrl(blob) {
     const url = URL.createObjectURL(blob);
@@ -171,50 +174,62 @@ export function mountPrompt(root, { viewport, corner }) {
     if (!res.ok) throw new Error(res.error || 'upload failed');
     return res.file;
   }
-  async function addImages(files) {
-    for (const f of [...files].filter((x) => x.type?.startsWith('image/')).slice(0, 8 - attachments.length)) {
-      const a = { id: Math.random().toString(36).slice(2), preview: URL.createObjectURL(f), pending: true };
+  async function addFiles(files) {
+    const ok = [...files].filter((x) => x.type?.startsWith('image/') || isGlb(x)).slice(0, 8 - attachments.length);
+    for (const f of ok) {
+      const model = isGlb(f);
+      const a = model ? { id: Math.random().toString(36).slice(2), kind: 'model', name: f.name, pending: true }
+        : { id: Math.random().toString(36).slice(2), kind: 'image', preview: URL.createObjectURL(f), pending: true };
       attachments.push(a); renderTray();
-      try { a.file = await uploadImage(f); } catch (e) { a.error = true; console.warn('image upload failed', e); }
+      try { a.file = model ? (await uploadModel(f)).file : await uploadImage(f); } catch (e) { a.error = e.message || true; console.warn('upload failed', e); }
       a.pending = false; renderTray();
     }
   }
   function removeAttachment(id) {
     const a = attachments.find((x) => x.id === id);
-    if (a) URL.revokeObjectURL(a.preview);
+    if (a?.preview) URL.revokeObjectURL(a.preview);
     attachments = attachments.filter((x) => x.id !== id); renderTray();
   }
+  const modelChip = (name) => h('span.chat-model-chip', { title: `${name}: sent to your agent, not added to the scene` }, icon('cube'), h('span.chat-model-name', {}, name));
   function renderTray() {
     tray.hidden = !attachments.length;
-    tray.replaceChildren(...attachments.map((a) => h(`div.chat-thumb${a.pending ? '.is-pending' : ''}${a.error ? '.is-error' : ''}`, { title: a.error ? 'Upload failed' : '' },
-      h('img', { src: a.preview, alt: '' }),
-      a.pending ? h('span.cc-spin') : null,
-      h('button.chat-thumb-x', { type: 'button', title: 'Remove', 'aria-label': 'Remove image', onClick: () => removeAttachment(a.id) }, icon('close')))));
+    tray.replaceChildren(...attachments.map((a) => {
+      const x = h('button.chat-thumb-x', { type: 'button', title: 'Remove', 'aria-label': a.kind === 'model' ? 'Remove model' : 'Remove image', onClick: () => removeAttachment(a.id) }, icon('close'));
+      const cls = `${a.pending ? '.is-pending' : ''}${a.error ? '.is-error' : ''}`;
+      const title = a.error ? `Upload failed${typeof a.error === 'string' ? `: ${a.error}` : ''}` : '';
+      if (a.kind === 'model') return h(`div.chat-thumb.chat-thumb--model${cls}`, { title: title || `${a.name}: goes to your agent with this message, not added to the scene` },
+        icon('cube'), h('span.chat-thumb-name', {}, a.name.replace(/\.glb$/i, '')), a.pending ? h('span.cc-spin') : null, x);
+      return h(`div.chat-thumb${cls}`, { title }, h('img', { src: a.preview, alt: '' }), a.pending ? h('span.cc-spin') : null, x);
+    }));
     autosize();
   }
   attachBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => { addImages(fileInput.files); fileInput.value = ''; input.focus(); });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; input.focus(); });
   input.addEventListener('paste', (e) => {
     const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
-    if (files.length) { e.preventDefault(); addImages(files); }
+    if (files.length) { e.preventDefault(); addFiles(files); }
   });
   panel.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); panel.classList.add('is-drop'); } });
   panel.addEventListener('dragleave', (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove('is-drop'); });
-  panel.addEventListener('drop', (e) => { if (!e.dataTransfer?.files?.length) return; e.preventDefault(); panel.classList.remove('is-drop'); addImages(e.dataTransfer.files); input.focus(); });
+  panel.addEventListener('drop', (e) => { if (!e.dataTransfer?.files?.length) return; e.preventDefault(); panel.classList.remove('is-drop'); addFiles(e.dataTransfer.files); input.focus(); });
 
-  const readyImages = () => attachments.filter((a) => a.file);
+  const readyFiles = () => attachments.filter((a) => a.file);
   async function submit() {
     const text = input.value.trim();
     if (attachments.some((a) => a.pending)) return;
-    const imgs = readyImages();
-    if (!text && !imgs.length) return;
+    const ready = readyFiles();
+    if (!text && !ready.length) return;
     if (view !== 'current') showCurrent();
     const sent = attachments;
     input.value = ''; attachments = []; renderTray();
     hint.hidden = true;
-    const res = await store.post('/api/prompt', { text, images: imgs.map((a) => a.file), context: context() });
+    const res = await store.post('/api/prompt', {
+      text, context: context(),
+      images: ready.filter((a) => a.kind !== 'model').map((a) => a.file),
+      models: ready.filter((a) => a.kind === 'model').map((a) => ({ file: a.file, name: a.name })),
+    });
     if (!res.ok) { input.value = text; attachments = sent; renderTray(); return; }
-    for (const a of sent) URL.revokeObjectURL(a.preview);
+    for (const a of sent) if (a.preview) URL.revokeObjectURL(a.preview);
   }
   // Start a request for the user: open the chat, put the text in the composer (in front of a draft) and show
   // what to add. Nothing is sent until they press send.
@@ -233,7 +248,7 @@ export function mountPrompt(root, { viewport, corner }) {
     const h_ = input.scrollHeight;
     input.style.height = `${Math.min(MAX, h_)}px`;
     input.classList.toggle('is-capped', h_ > MAX);
-    send.disabled = attachments.some((a) => a.pending) || (!input.value.trim() && !readyImages().length);
+    send.disabled = attachments.some((a) => a.pending) || (!input.value.trim() && !readyFiles().length);
   }
   input.addEventListener('input', autosize);
   input.addEventListener('input', () => { if (!input.value) hint.hidden = true; });
@@ -269,8 +284,10 @@ export function mountPrompt(root, { viewport, corner }) {
   function fillPrompt(el, p, st = null) {
     el.title = [p.at ? time(p.at) : '', ctxLine(p.context)].filter(Boolean).join(' · ');
     const imgs = (p.images || []).map((im) => h('a.chat-img', { href: im.url, target: '_blank', rel: 'noopener', title: 'Open image' }, h('img', { src: im.url, alt: '', loading: 'lazy' })));
+    const models = (p.models || []).map((m) => modelChip(m.name || m.file));
     el.replaceChildren(
       ...(imgs.length ? [h('div.chat-imgs', {}, ...imgs)] : []),
+      ...(models.length ? [h('div.chat-models', {}, ...models)] : []),
       ...(p.text ? [h('div.chat-bubble', {}, p.text)] : []),
       ...(st ? [h('div.chat-foot', {}, st)] : []));
     return el;

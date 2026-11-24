@@ -312,7 +312,9 @@ only delivered to an agent that is waiting. Calling `wait` also marks any prompt
 as done and turns listen mode on. "this", "it" or "here" in a prompt refer to the `selected:` object and
 the `playhead:` time printed with it. When the user attaches images (references, sketches,
 screenshots), the prompt has an `images attached:` line with their file paths: open each one with
-your Read tool before acting on the prompt. When the user points back to an earlier conversation
+your Read tool before acting on the prompt. A `.glb` the user drops in the chat comes as a `GLB models attached,
+NOT in the scene yet` line with its path: add it (`canvas import <path> --pos …`) only if the message asks for it
+(a `.glb` dropped on the canvas is already in the scene, where the camera was focused). When the user points back to an earlier conversation
 ("like last time"), `canvas chats` lists past chats and `canvas chats <id>` prints one.
 
 How to listen depends on the agent:
