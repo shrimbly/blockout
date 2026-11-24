@@ -10,6 +10,7 @@ import { h, button, segmented, panel, toast, kbd } from './ui/kit.js';
 import { mountSaves } from './saves.js';
 import { audio } from './audio.js';
 import controls from './controls/index.js';
+import { isGlb, hasFiles, notGlbNote, importModels } from './models.js';
 
 const $ = (id) => document.getElementById(id);
 const viewport = new Viewport($('stage'));
@@ -98,6 +99,23 @@ function mountControls() {
     } catch (e) { console.error(e); toast(`control "${c.id}" failed: ${e.message}`, { kind: 'error' }); }
   }
 }
+
+// ---------- drop a .glb on the canvas: add it where the camera is focused ----------
+// (dropped in the chat instead, it goes with the next message for the agent and is not added; see prompt.js)
+const stage = $('stage');
+stage.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; stage.classList.add('is-drop'); } });
+stage.addEventListener('dragleave', (e) => { if (!stage.contains(e.relatedTarget)) stage.classList.remove('is-drop'); });
+stage.addEventListener('drop', (e) => {
+  stage.classList.remove('is-drop');
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  const files = [...e.dataTransfer.files], glbs = files.filter(isGlb);
+  if (!glbs.length) return toast(notGlbNote(files), { kind: 'error' });
+  importModels(glbs, viewport.focusPoint());
+});
+// a file dropped anywhere else must not make the browser navigate away from the canvas
+addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener('drop', (e) => { if (hasFiles(e)) e.preventDefault(); });
 
 // ---------- actions ----------
 async function duplicate() {

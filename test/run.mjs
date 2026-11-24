@@ -1069,6 +1069,14 @@ test('canvas import uploads a GLB to models/, adds a model and --fit sets the sh
     assert.ok(fs.existsSync(path.join(dir, 'models', o.params.file)));
     const served = await fetch(`${base}/models/${o.params.file}`);
     assert.equal(served.headers.get('content-type'), 'model/gltf-binary');
+    // a GLB dropped in the chat: uploaded, sent with the prompt by path, not added to the scene
+    const up = await (await fetch(`${base}/api/model?name=Chair.glb`, { method: 'POST', body: tinyGlb({ top: 0.9 }) })).json();
+    const sent = await (await fetch(`${base}/api/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '', models: [{ file: up.file, name: 'Chair.glb' }, { file: '../scene.json' }, 'missing-00000000.glb'] }) })).json();
+    assert.deepEqual(sent.prompt.models.map((m) => [m.file, m.name, m.path]), [[up.file, 'Chair.glb', path.join(dir, 'models', up.file)]]);
+    const waited = cli('wait', '--timeout', '2');
+    assert.match(waited, /\(no text, see the attached models\)/);
+    assert.match(waited, new RegExp(`GLB models attached, NOT in the scene yet .*Chair\\.glb → ${path.join(dir, 'models', up.file).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.equal((await (await fetch(`${base}/api/doc`)).json()).doc.objects.length, 1);
     fs.writeFileSync(path.join(dir, 'bad.glb'), 'nope');
     assert.throws(() => cli('import', path.join(dir, 'bad.glb')), /not a GLB/);
   } finally { srv.kill(); }

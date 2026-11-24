@@ -21,6 +21,27 @@ const cliAsync = (...args) => new Promise((resolve, reject) => {
   let out = ''; p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (out += d));
   p.on('close', (code) => (code === 0 ? resolve(out.trim()) : reject(new Error(out))));
 });
+// A GLB three.js can load: a 1 m cube (positions + indices), bottom at y = 0.
+function boxGlb() {
+  const P = [];
+  for (const x of [-0.5, 0.5]) for (const y of [0, 1]) for (const z of [-0.5, 0.5]) P.push(x, y, z);
+  const I = [0,1,3, 0,3,2, 4,6,7, 4,7,5, 0,4,5, 0,5,1, 2,3,7, 2,7,6, 0,2,6, 0,6,4, 1,5,7, 1,7,3];
+  const pos = Buffer.from(new Float32Array(P).buffer), idx = Buffer.from(new Uint16Array(I).buffer);
+  const bin = Buffer.concat([pos, idx, Buffer.alloc((4 - ((pos.length + idx.length) % 4)) % 4)]);
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    buffers: [{ byteLength: bin.length }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: pos.length, target: 34962 }, { buffer: 0, byteOffset: pos.length, byteLength: idx.length, target: 34963 }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 8, type: 'VEC3', min: [-0.5, 0, -0.5], max: [0.5, 1, 0.5] }, { bufferView: 1, componentType: 5123, count: I.length, type: 'SCALAR' }],
+  }));
+  const jpad = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 0x20)]);
+  const chunk = (type, data) => { const h = Buffer.alloc(8); h.writeUInt32LE(data.length, 0); h.writeUInt32LE(type, 4); return Buffer.concat([h, data]); };
+  const body = Buffer.concat([chunk(0x4e4f534a, jpad), chunk(0x004e4942, bin)]);
+  const head = Buffer.alloc(12); head.write('glTF', 0, 'latin1'); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + body.length, 8);
+  return Buffer.concat([head, body]);
+}
+
 let failures = 0;
 const ok = (cond, msg) => { console.log(`${cond ? 'ok  ' : 'FAIL'} ${msg}`); if (!cond) failures++; };
 
@@ -1012,6 +1033,37 @@ try {
   await page.waitForTimeout(400);
   ok(await page.evaluate(() => document.querySelector('.tl-playmenu').hidden), 'it closes when the pointer leaves');
   cli('rm', 'chip');
+
+  // --- drop a .glb: on the canvas it is added where the camera is focused; in the chat it goes with the message ---
+  const glb = Array.from(boxGlb());
+  const dropGlb = (sel, name) => page.evaluate(({ sel, name, bytes }) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(bytes)], name, { type: 'model/gltf-binary' }));
+    const el = document.querySelector(sel), r = el.getBoundingClientRect();
+    const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, dataTransfer: dt };
+    el.dispatchEvent(new DragEvent('dragover', at));
+    el.dispatchEvent(new DragEvent('drop', at));
+  }, { sel, name, bytes: glb });
+  await page.evaluate(() => { window.canvas.store.set({ view: 'free' }); const v = window.canvas.viewport; v.freeOrbit.target.set(6, 1.2, -4); v.freeOrbit.update(); });
+  const n0 = await page.evaluate(() => window.canvas.store.doc.objects.length);
+  await dropGlb('#stage canvas', 'Crate Box.glb');
+  await page.waitForFunction((n) => window.canvas.store.doc.objects.length === n + 1, n0, { timeout: 5000 }).catch(() => {});
+  const crate = await page.evaluate(() => window.canvas.store.doc.objects.find((o) => o.type === 'model'));
+  ok(crate && crate.name === 'crate-box' && crate.position.join() === '6,0,-4' && crate.params.h === 1, `a .glb dropped on the canvas is added at the camera's focus, on the ground (${crate && crate.position})`);
+  ok(await page.evaluate(() => window.canvas.store.state.selection) === crate?.id, 'and selected');
+  await page.evaluate(() => window.canvas.store.set({ selection: null }));
+  await page.evaluate(() => { const v = window.canvas.viewport; v.freeOrbit.target.set(0, 1, 0); v.freeOrbit.update(); });
+  await dropGlb('.chat', 'Chair.glb');
+  await page.waitForSelector('.chat-tray .chat-thumb--model:not(.is-pending)', { timeout: 5000 }).catch(() => {});
+  ok(await page.$eval('.chat-tray .chat-thumb--model .chat-thumb-name', (e) => e.textContent).catch(() => '') === 'Chair', 'a .glb dropped in the chat shows as a chip in the composer');
+  ok(await page.evaluate((n) => window.canvas.store.doc.objects.length === n + 1, n0), 'and is not added to the scene');
+  await page.fill('.chat-input', 'use this chair');
+  await page.click('.chat-send');
+  const gotGlb = await cliAsync('wait', '--timeout', '5');
+  ok(/use this chair/.test(gotGlb) && /GLB models attached, NOT in the scene yet .*Chair\.glb → .*models\/chair-[0-9a-f]{8}\.glb/.test(gotGlb), 'the agent gets the model\'s path with the message');
+  ok(await page.$eval('.chat-msg .chat-model-chip', (e) => e.textContent).catch(() => '') === 'Chair.glb', 'the sent message shows the model');
+  cli('say', 'ok');
+  cli('rm', crate?.id || 'crate-box');
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();

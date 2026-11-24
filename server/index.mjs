@@ -562,15 +562,22 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       json(res, 200, { ok: true, ...chatFile(file, orig) });
     },
     'POST /api/prompt': async (req, res) => {
-      const { text, context, images } = await readJson(req);
+      const { text, context, images, models } = await readJson(req);
       const imgs = (Array.isArray(images) ? images : [])
         .map((f) => path.basename(String(f?.file || f)))
         .filter((f) => fs.existsSync(path.join(uploadsDir, f)))
         .slice(0, 8)
         .map((f) => ({ file: f, url: `/uploads/${f}`, path: path.join(uploadsDir, f) }));
-      if ((!text || !String(text).trim()) && !imgs.length) return json(res, 400, { ok: false, error: 'empty prompt' });
+      // GLBs dropped in the chat: already uploaded to models/ (POST /api/model) but not in the scene yet.
+      const mods = (Array.isArray(models) ? models : [])
+        .map((f) => ({ file: path.basename(String(f?.file || f)), name: f?.name ? path.basename(String(f.name)) : undefined }))
+        .filter((f) => MODEL_FILE.test(f.file) && fs.existsSync(path.join(modelsDir, f.file)))
+        .slice(0, 8)
+        .map((f) => ({ file: f.file, name: f.name || f.file, url: `/models/${f.file}`, path: path.join(modelsDir, f.file) }));
+      if ((!text || !String(text).trim()) && !imgs.length && !mods.length) return json(res, 400, { ok: false, error: 'empty prompt' });
       const p = { id: `p${Date.now().toString(36)}`, text: String(text || '').trim(), context: context || {}, status: 'pending', at: Date.now() };
       if (imgs.length) p.images = imgs;
+      if (mods.length) p.models = mods;
       prompts.push(p); if (prompts.length > 500) prompts = prompts.slice(-500);
       savePrompts();
       broadcast('prompt', p);

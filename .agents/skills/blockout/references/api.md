@@ -132,6 +132,9 @@ with the audio track mixed in; `--shot <id>` for one shot); `snapshot`, `storybo
 (`POST /api/model`) and adds it as a `model` object, drawn with its own materials. Its first animation clip plays on the
 action time: from `offset`, at `speed`, holding its first frame before and its last frame after. `--fit` makes the active
 shot as long as the clip. Move, rotate and scale it like any object (`canvas set`, `canvas move`); `around: <id>` orbits it.
+In the browser, a `.glb` dropped on the canvas is uploaded and added where the camera is focused (the first upward
+surface below the aim point, else the ground). One dropped in the chat is uploaded to `models/` but not added: the prompt
+carries `models: [{ file, name, path, url }]` (`POST /api/prompt` takes `models: [{ file, name }]`, files already in `models/`).
 
 `canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
