@@ -1053,6 +1053,7 @@ try {
   ok(await page.evaluate(() => window.canvas.store.state.selection) === crate?.id, 'and selected');
   await page.evaluate(() => window.canvas.store.set({ selection: null }));
   await page.evaluate(() => { const v = window.canvas.viewport; v.freeOrbit.target.set(0, 1, 0); v.freeOrbit.update(); });
+  if (await page.evaluate(() => document.querySelector('.chat').hidden)) await page.click('.chat-toggle');
   await dropGlb('.chat', 'Chair.glb');
   await page.waitForSelector('.chat-tray .chat-thumb--model:not(.is-pending)', { timeout: 5000 }).catch(() => {});
   ok(await page.$eval('.chat-tray .chat-thumb--model .chat-thumb-name', (e) => e.textContent).catch(() => '') === 'Chair', 'a .glb dropped in the chat shows as a chip in the composer');
