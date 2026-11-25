@@ -15,7 +15,7 @@ const DEG = Math.PI / 180;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const ACCENT = new THREE.Color('#ff5a1f');
 const LENS = { min: 8, max: 300 }; // mm, the same range as the timeline's lens field
-const SAFE = { top: 52, bottom: 124, side: 16, chat: 364 }; // keep the shot frame clear of the floating UI
+const SAFE = { top: 52, bottom: 124, side: 16, chat: 364, gap: 24 }; // keep the shot frame clear of the floating UI
 
 export class Viewport {
   constructor(stage) {
@@ -63,7 +63,7 @@ export class Viewport {
       if (c.selection) this._applySelection();
       if (c.gizmo) this.gizmo.setMode(store.state.gizmo);
       if (c.key) this._rebuildPath();
-      if (c.chat) this.layout();
+      if (c.chat || c.beside) this.layout();
     });
   }
 
@@ -360,18 +360,23 @@ export class Viewport {
       const tl = document.getElementById('timeline'); // the timeline grows with the audio lane
       const bottom = tl ? Math.max(SAFE.bottom, innerHeight - tl.getBoundingClientRect().top + 12) : SAFE.bottom;
       const aw = W - SAFE.side - right, ah = H - SAFE.top - bottom;
-      let w, h;
-      if (aw / ah > A) { h = ah; w = ah * A; } else { w = aw; h = aw / A; }
-      const x = SAFE.side + (aw - w) / 2, y = SAFE.top + (ah - h) / 2;
+      const V = store.state.beside?.aspect; // a chat video beside the frame: the two the same height, centred together
+      const pw = V ? A + V : A, gap = V ? SAFE.gap : 0;
+      let h = Math.min(ah, (aw - gap) / pw);
+      const w = h * A;
+      const x = SAFE.side + (aw - h * pw - gap) / 2, y = SAFE.top + (ah - h) / 2;
+      this.besideRect = V ? { x: x + w + gap, y, w: h * V, h } : null;
       this.shotFrame = { x, y, w, h };
       Object.assign(this.frameEl.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
       // the frame is the camera's full view; the window is that view extended on every side
       this.shotCam.setViewOffset(w, h, -x, -y, W, H);
     } else {
       this.shotFrame = null;
+      this.besideRect = null;
       this.shotCam.clearViewOffset();
     }
     this.shotCam.updateProjectionMatrix();
+    this.onLayout?.(this);
   }
 
   _applyView() {

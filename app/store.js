@@ -24,6 +24,7 @@ export const store = {
     launch: null,
     exporting: false,
     chat: true,            // chat sidebar open
+    beside: null,          // a chat video shown beside the shot frame: { url, name, aspect } (beside.js)
   },
 
   on(event, fn) {

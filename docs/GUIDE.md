@@ -110,7 +110,9 @@ is needed (the key block saves it on your machine; the agent never sees it). The
 one of your saved ComfyUI workflows ("recipes") to the timeline, writes a timed prompt from the camera moves
 (`canvas brief`), and shows you the full prompt to review, then a confirm card with the cost. Nothing that costs
 credits runs until you press **Render**. A progress card shows the job; the finished video plays in the chat
-and is saved in `scenes/renders/` with the exact workflow and prompt that made it.
+and is saved in `scenes/renders/` with the exact workflow and prompt that made it. **Beside shot** under any
+video in the chat puts it next to the shot frame, the two centred together and in step with the timeline (play
+and scrub move both); the chat hides until you close the video with its ×.
 
 It runs on [Comfy Cloud](https://docs.comfy.org/agent-tools/mcp) or your own ComfyUI, through the Comfy Cloud
 MCP, `comfy-mcp` or the `comfy` command line. A Seedance 2.5 recipe is included; put your own workflows (API

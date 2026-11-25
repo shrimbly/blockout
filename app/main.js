@@ -5,6 +5,7 @@ import { store } from './store.js';
 import { Viewport } from './viewport.js';
 import { mountTimeline } from './timeline.js';
 import { mountPrompt } from './prompt.js';
+import { mountBeside } from './beside.js';
 import { createRenderer } from './render.js';
 import { h, button, segmented, panel, toast, kbd } from './ui/kit.js';
 import { mountSaves } from './saves.js';
@@ -16,9 +17,12 @@ const $ = (id) => document.getElementById(id);
 const viewport = new Viewport($('stage'));
 const renderer = createRenderer(viewport);
 const timeline = mountTimeline($('timeline'), { viewport, exporter: renderer });
-const prompt = mountPrompt($('prompt'), { viewport, corner: $('corner') });
+const beside = mountBeside($('stage'));
+viewport.onLayout = (v) => beside.place(v.besideRect);
+viewport.layout();
+const prompt = mountPrompt($('prompt'), { viewport, corner: $('corner'), beside });
 audio.attach();
-window.canvas = { store, viewport, renderer, timeline, audio }; // handy in the devtools console
+window.canvas = { store, viewport, renderer, timeline, audio, beside }; // handy in the devtools console
 
 // ---------- selection chip (top left) ----------
 const selName = h('span.cc-mono.sel-name');

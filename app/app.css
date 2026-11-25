@@ -156,7 +156,17 @@ body { background: var(--cc-bg); }
 .chat-files { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
 .chat-video { margin: 0; display: flex; flex-direction: column; gap: 3px; max-width: 100%; }
 .chat-video video { display: block; max-width: 100%; max-height: 360px; border-radius: 10px; border: 1px solid var(--cc-line); background: #000; }
-.chat-video figcaption { font-family: var(--cc-mono); font-size: 10.5px; color: var(--cc-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-video figcaption { display: flex; align-items: center; gap: var(--cc-gap); min-width: 0; font-family: var(--cc-mono); font-size: 10.5px; color: var(--cc-text-dim); }
+.chat-video figcaption a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-video .chat-beside { flex-shrink: 0; margin-left: auto; font-family: var(--cc-font); }
+
+/* A chat video beside the shot frame (beside.js): placed by viewport.layout(), the same height as the frame. */
+.beside { position: absolute; box-shadow: 0 0 0 1px var(--cc-line-strong); background: #000; }
+.beside[hidden] { display: none; }
+.beside video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.beside-close { position: absolute; top: 8px; right: 8px; border-radius: 50%; background: var(--cc-surface); box-shadow: var(--cc-shadow); }
+.beside-label { position: absolute; left: 8px; top: 8px; max-width: calc(100% - 56px); padding: 3px 6px; border-radius: var(--cc-radius); background: var(--cc-surface); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--cc-mono); font-size: var(--cc-size-sm); color: var(--cc-text-dim); }
+.beside-label:empty { display: none; }
 .chat-video figcaption a { color: inherit; text-decoration: none; }
 .chat-video figcaption a:hover { text-decoration: underline; }
 .chat.is-drop .chat-input-row { border-color: var(--cc-accent); box-shadow: 0 0 0 3px rgba(255,90,31,0.15); }
