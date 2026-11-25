@@ -11,7 +11,7 @@ import { isGlb, uploadModel } from './models.js';
 
 const OPEN_KEY = 'cc-chat-open';
 
-export function mountPrompt(root, { viewport, corner }) {
+export function mountPrompt(root, { viewport, corner, beside }) {
   // ---------- header: agent status, and the selection sent with your message ----------
   const dot = h('span.cc-dot');
   const statusText = h('span.chat-status-text');
@@ -117,9 +117,9 @@ export function mountPrompt(root, { viewport, corner }) {
 
   let open = true;
   try { open = localStorage.getItem(OPEN_KEY) !== '0'; } catch {}
-  function setOpen(v) {
+  function setOpen(v, { remember = true } = {}) {
     open = v;
-    try { localStorage.setItem(OPEN_KEY, v ? '1' : '0'); } catch {}
+    if (remember) try { localStorage.setItem(OPEN_KEY, v ? '1' : '0'); } catch {}
     panel.hidden = !v;
     document.body.classList.toggle('chat-open', v);
     if (v) { unread = false; hidePeek(); scrollToEnd(); }
@@ -307,12 +307,21 @@ export function mountPrompt(root, { viewport, corner }) {
       ...(m.text ? [h('div.chat-text', {}, m.text)] : []),
       ...(m.files?.length ? [h('div.chat-files', {}, ...m.files.map(fileEl))] : []));
   }
+  // "Beside shot": the video in the viewport next to the shot frame, following the timeline (beside.js).
+  function besideBtn(f, v) {
+    const b = button({ icon: 'columns', label: 'Beside shot', kind: 'ghost', title: 'Show this video beside the shot frame, in step with the timeline', onClick: () => { v.pause(); beside.show(f); } });
+    b.classList.add('chat-beside');
+    return b;
+  }
+  // The chat hides while a video is beside the shot and comes back when it closes (not remembered across reloads).
+  store.on('state', (c) => { if (c.chat && store.state.chat !== open) setOpen(store.state.chat, { remember: false }); });
   // A file on a reply: a video plays in place, an image opens in a new tab.
   function fileEl(f) {
     if (f.type === 'video') {
-      return h('figure.chat-video', {},
-        h('video', { src: f.url, controls: true, loop: true, playsInline: true, preload: 'metadata', 'aria-label': f.name }),
-        h('figcaption', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.path || 'Open video' }, f.name)));
+      const v = h('video', { src: f.url, controls: true, loop: true, playsInline: true, preload: 'metadata', 'aria-label': f.name });
+      return h('figure.chat-video', {}, v,
+        h('figcaption', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.path || 'Open video' }, f.name),
+          ...(beside ? [besideBtn(f, v)] : [])));
     }
     return h('a.chat-img', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, h('img', { src: f.url, alt: f.name, loading: 'lazy' }));
   }

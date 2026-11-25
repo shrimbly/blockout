@@ -602,6 +602,37 @@ try {
   await page.waitForSelector('.chat-msg--agent .chat-video video');
   const vid = await page.waitForFunction(() => { const v = document.querySelector('.chat-video video'); return v && v.readyState >= 1 && v.duration > 0 ? { d: v.duration, w: v.videoWidth } : null; }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
   ok(vid && vid.d > 1 && vid.w === 320, `a video attached to a reply loads in the chat (${vid ? `${vid.d.toFixed(2)}s, ${vid.w}px wide` : 'did not load'})`);
+  // "Beside shot": the video goes next to the shot frame, both the same height and centred together, the chat
+  // hides, the video follows the playhead, and closing it brings the chat back
+  {
+    const view0 = await page.evaluate(() => window.canvas.store.state.view);
+    await page.click('.chat-video .chat-beside');
+    await page.waitForSelector('.beside:not([hidden])');
+    await page.waitForTimeout(100);
+    const g = await page.evaluate(() => {
+      const f = document.querySelector('.shot-frame').getBoundingClientRect(), b = document.querySelector('.beside').getBoundingClientRect();
+      return { f: { x: f.x, w: f.width, h: f.height, y: f.y }, b: { x: b.x, w: b.width, h: b.height, y: b.y }, W: innerWidth, chat: !document.querySelector('.chat').hidden && document.querySelector('.chat').offsetParent !== null, view: window.canvas.store.state.view };
+    });
+    const mid = (g.f.x + g.b.x + g.b.w) / 2;
+    ok(g.view === 'shot' && !g.chat && Math.abs(g.f.h - g.b.h) < 1 && Math.abs(g.f.y - g.b.y) < 1 && g.b.x > g.f.x + g.f.w && Math.abs(mid - g.W / 2) < 2 && Math.abs(g.b.w / g.b.h - 16 / 9) < 0.02,
+      `Beside shot puts the video right of the frame, same height, centred as a pair, chat hidden (frame ${g.f.w | 0}×${g.f.h | 0} at ${g.f.x | 0}, video ${g.b.w | 0}×${g.b.h | 0} at ${g.b.x | 0}, window ${g.W})`);
+    await page.evaluate(() => window.canvas.store.set({ playing: false, time: 1 }));
+    await page.waitForTimeout(200);
+    const vt = await page.evaluate(() => document.querySelector('.beside video').currentTime);
+    const shots = JSON.parse(cli('doc')).shots.length;
+    if (shots === 1) ok(Math.abs(vt - 1) < 0.05, `the video follows the playhead (timeline 1 s, video ${vt.toFixed(2)} s)`);
+    // a pick that fails to load leaves the video that was showing, and picking that one again still works
+    const shownUrl = await page.evaluate(() => window.canvas.store.state.beside.url);
+    await page.evaluate(() => window.canvas.beside.show({ url: 'data:video/mp4;base64,AAAAAAAA', name: 'broken.mp4' }));
+    await page.waitForFunction((u) => document.querySelector('.beside video').src.endsWith(u) && document.querySelector('.beside video').readyState >= 1, shownUrl, { timeout: 10000 }).catch(() => null);
+    await page.evaluate((u) => { window.canvas.store.set({ view: 'free' }); window.canvas.beside.show({ url: u, name: 'again' }); }, shownUrl);
+    const back = await page.evaluate(() => ({ src: document.querySelector('.beside video').src, view: window.canvas.store.state.view, url: window.canvas.store.state.beside?.url }));
+    ok(back.src.endsWith(shownUrl) && back.view === 'shot' && back.url === shownUrl, 'a video that fails to load leaves the one showing, and picking it again brings back shot view');
+    await page.click('.beside-close');
+    const after = await page.evaluate(() => ({ hidden: document.querySelector('.beside').hidden, chat: !!window.canvas.store.state.chat }));
+    ok(after.hidden && after.chat && (await page.isVisible('.chat')), 'closing the video brings the chat back');
+    await page.evaluate((v) => window.canvas.store.set({ view: v }), view0);
+  }
   if (!chatWasOpen) await page.click('.chat-toggle');
   ok(/^shot 1\/\d+ .*\n(opens on|no camera keys)/.test(cli('brief')), 'canvas brief describes the active shot');
 
