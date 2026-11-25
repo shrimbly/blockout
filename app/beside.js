@@ -41,7 +41,7 @@ export function mountBeside(stage) {
       store.emit('error', `couldn't load ${name || 'the video'}`);
       // keep showing the video that was there: load it again and pick up at the playhead
       const cur = store.state.beside;
-      if (cur) { pending = cur.url; video.src = cur.url; label.textContent = cur.name || ''; video.onloadedmetadata = () => { if (pending !== cur.url) return; pending = null; loaded = cur.url; sync(true); }; video.onerror = null; video.load(); }
+      if (cur) { pending = cur.url; video.src = cur.url; label.textContent = cur.name || ''; video.onloadedmetadata = () => { if (pending !== cur.url) return; pending = null; loaded = cur.url; sync(true); }; video.onerror = () => { if (pending === cur.url) pending = null; }; video.load(); }
     };
     loaded = null;
     video.load();
