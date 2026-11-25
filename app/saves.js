@@ -1,5 +1,5 @@
 // Scenes menu: drops from the scene name in the top-right menu. New scene, Save as (⌘S), then the saved
-// versions; click one to load it. Saves live in scenes/saved/ on the server, each with a thumbnail of the shot.
+// versions; click one to load it, or its trash icon (twice) to delete it. Saves live in scenes/saved/ on the server, each with a thumbnail of the shot.
 // Every change autosaves into the version you are on (the server does that), and its thumbnail follows.
 // New and Load are normal changes, so ⌘Z brings the previous scene back.
 
@@ -63,14 +63,34 @@ export function mountSaves(corner, { viewport }) {
     last = saves;
     if (!saves.length) { list.replaceChildren(h('div.scenes-empty', {}, 'No saved versions yet')); return; }
     const cur = current();
-    list.replaceChildren(...saves.map((s) => h('button.scenes-item', {
-      type: 'button', role: 'menuitem', title: `${s.name} · ${new Date(s.savedAt).toLocaleString()}\n${s.objects} objects · ${s.keys} keys · click to load (⌘Z undoes it)`,
-      onClick: () => load(s.name),
-    },
-    s.thumb ? h('img.scenes-thumb', { src: s.thumb, alt: '' }) : h('span.scenes-thumb'),
-    h('span.scenes-label', { class: s.name === cur ? 'is-current' : '' }, s.name),
-    s.name === cur ? h('span.scenes-tick', {}, icon('check')) : h('span.scenes-age', {}, ago(s.savedAt)),
-    )));
+    list.replaceChildren(...saves.map((s) => {
+      const row = h('div.scenes-row', {},
+        h('button.scenes-item', {
+          type: 'button', role: 'menuitem', title: `${s.name} · ${new Date(s.savedAt).toLocaleString()}\n${s.objects} objects · ${s.keys} keys · click to load (⌘Z undoes it)`,
+          onClick: () => load(s.name),
+        },
+        s.thumb ? h('img.scenes-thumb', { src: s.thumb, alt: '' }) : h('span.scenes-thumb'),
+        h('span.scenes-label', { class: s.name === cur ? 'is-current' : '' }, s.name),
+        s.name === cur ? h('span.scenes-tick', {}, icon('check')) : h('span.scenes-age', {}, ago(s.savedAt)),
+        ));
+      // trash on hover; the first click arms it ("Delete"), the second deletes; leaving the row disarms it
+      const del = h('button.scenes-del', {
+        type: 'button', title: `Delete "${s.name}"`, 'aria-label': `Delete ${s.name}`,
+        onClick: (e) => { e.stopPropagation(); if (row.classList.contains('is-confirm')) remove(s.name); else arm(true); },
+      }, icon('trash'), h('span.scenes-del-text', {}, 'Delete'));
+      const arm = (on) => { row.classList.toggle('is-confirm', on); del.title = on ? `Click again to delete "${s.name}"` : `Delete "${s.name}"`; };
+      row.addEventListener('pointerleave', () => arm(false));
+      del.addEventListener('blur', () => arm(false));
+      row.append(del);
+      return row;
+    }));
+  }
+
+  async function remove(n) {
+    const r = await store.post('/api/save/delete', { name: n });
+    if (!r.ok) { toast(r.error, { kind: 'error' }); return; }
+    toast(r.current ? `Deleted "${n}". The scene stays open; Save as to keep it.` : `Deleted "${n}".`);
+    refresh();
   }
 
   refresh(); // know the saved versions from the start (for autosave thumbnails)
@@ -137,5 +157,5 @@ export function mountSaves(corner, { viewport }) {
     else if (e.key === 'Escape' && !menu.hidden) { e.stopPropagation(); toggle(false); }
   }, true);
 
-  return { toggle, save, load, newScene, btn };
+  return { toggle, save, load, remove, newScene, btn };
 }

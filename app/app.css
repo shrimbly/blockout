@@ -41,7 +41,19 @@ body { background: var(--cc-bg); }
 .scenes-field { flex: 1; min-width: 0; }
 .scenes-field:focus { outline: none; border-color: var(--cc-line-strong); }
 .scenes-sep { height: 1px; background: var(--cc-line); margin: 3px 2px; flex: none; }
-.scenes-list { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; min-height: 0; }
+.scenes-list { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; min-height: 0; max-height: calc(15 * 28px + 14 * 1px); scrollbar-width: thin; } /* scrolls after 15 */
+.scenes-row { position: relative; flex: none; }
+.scenes-del { position: absolute; top: 4px; right: 4px; height: 20px; min-width: 20px; display: none; align-items: center; justify-content: center; gap: 4px; padding: 0 3px; border: 0; border-radius: var(--cc-radius); background: var(--cc-surface-sunk); color: var(--cc-text-dim); font: inherit; font-size: var(--cc-size-sm); cursor: pointer; }
+.scenes-del svg { width: 13px; height: 13px; flex: none; }
+.scenes-del-text { display: none; }
+.scenes-row:hover .scenes-del, .scenes-row:focus-within .scenes-del, .scenes-row.is-confirm .scenes-del { display: inline-flex; }
+.scenes-row:hover .scenes-age, .scenes-row:hover .scenes-tick, .scenes-row.is-confirm .scenes-age, .scenes-row.is-confirm .scenes-tick { visibility: hidden; }
+.scenes-row:hover .scenes-label, .scenes-row.is-confirm .scenes-label { padding-right: 18px; }
+.scenes-row.is-confirm .scenes-label { padding-right: 64px; }
+.scenes-del:hover, .scenes-row.is-confirm .scenes-del { color: var(--cc-danger); }
+.scenes-row.is-confirm .scenes-del { padding: 0 7px 0 5px; }
+.scenes-row.is-confirm .scenes-del-text { display: inline; }
+.scenes-del:focus-visible { outline: 1px solid var(--cc-line-strong); }
 .scenes-thumb { width: 32px; height: 18px; flex: none; border-radius: 3px; object-fit: cover; background: var(--cc-surface-sunk); border: 1px solid var(--cc-line); box-sizing: border-box; }
 .scenes-empty { color: var(--cc-text-faint); padding: 6px; }
 .help-row { display: flex; align-items: center; gap: 8px; min-height: 22px; }

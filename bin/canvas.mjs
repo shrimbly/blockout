@@ -161,6 +161,7 @@ Save and load (scenes/saved/<name>.json)
   canvas save [name] [--overwrite]           save a named copy of the scene (default name: scene-<date>-<time>)
   canvas load <name>                         replace the scene with a save (undo brings the old one back)
   canvas saves                               list saves, newest first
+  canvas save-rm <name>                      delete a save (moved to scenes/saved/.deleted/)
 
 Raw / batch
   canvas op '<json op or [ops]>'            e.g. canvas op '{"op":"add","type":"box","w":2}'
@@ -898,6 +899,11 @@ const commands = {
   async saves() {
     const r = await api('GET', '/api/saves');
     out(r.saves.length ? r.saves.map((s) => `${s.name.padEnd(28)} ${s.savedAt.replace('T', ' ').slice(0, 16)}  ${s.objects} objects, ${s.keys} keys`).join('\n') : `no saves yet (${r.dir})`);
+  },
+  async 'save-rm'({ pos }) {
+    if (!pos[0]) throw new Error('usage: canvas save-rm <name>   (canvas saves lists them)');
+    const r = await api('POST', '/api/save/delete', { name: pos.join(' ') });
+    out(`deleted save "${r.name}" (moved to ${r.moved})${r.current ? '; the open scene is unchanged but no longer autosaves anywhere until you save it again' : ''}`);
   },
   async undo() { out(await api('POST', '/api/undo')); },
   async redo() { out(await api('POST', '/api/redo')); },

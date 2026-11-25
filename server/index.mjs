@@ -448,6 +448,23 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       broadcast('saves', { saves: listSaves() });
       json(res, 200, { ok: true });
     },
+    // delete a save: its .json and thumbnail move to scenes/saved/.deleted/ (recoverable by hand, never listed).
+    // The open scene is left as it is; if it was that save, it simply stops autosaving until saved again.
+    'POST /api/save/delete': async (req, res) => {
+      const { name } = await readJson(req);
+      const n = saveName(name);
+      const file = path.join(savesDir, `${n}.json`);
+      if (!fs.existsSync(file)) return json(res, 404, { ok: false, error: `no save "${n}" (saves: ${listSaves().map((s) => s.name).join(', ') || 'none'})` });
+      const bin = path.join(savesDir, '.deleted');
+      fs.mkdirSync(bin, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
+      const moved = path.join(bin, `${n}-${stamp}.json`);
+      fs.renameSync(file, moved);
+      const png = path.join(savesDir, `${n}.png`);
+      if (fs.existsSync(png)) fs.renameSync(png, moved.replace(/\.json$/, '.png'));
+      broadcast('saves', { saves: listSaves() });
+      json(res, 200, { ok: true, name: n, moved, current: doc.meta?.name === n });
+    },
     'POST /api/load': async (req, res) => {
       const { name } = await readJson(req);
       const n = saveName(name);
