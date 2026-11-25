@@ -308,8 +308,8 @@ export function mountPrompt(root, { viewport, corner, beside }) {
       ...(m.files?.length ? [h('div.chat-files', {}, ...m.files.map(fileEl))] : []));
   }
   // "Beside shot": the video in the viewport next to the shot frame, following the timeline (beside.js).
-  function besideBtn(f) {
-    const b = button({ icon: 'columns', label: 'Beside shot', kind: 'ghost', title: 'Show this video beside the shot frame, in step with the timeline', onClick: () => beside.show(f) });
+  function besideBtn(f, v) {
+    const b = button({ icon: 'columns', label: 'Beside shot', kind: 'ghost', title: 'Show this video beside the shot frame, in step with the timeline', onClick: () => { v.pause(); beside.show(f); } });
     b.classList.add('chat-beside');
     return b;
   }
@@ -318,10 +318,10 @@ export function mountPrompt(root, { viewport, corner, beside }) {
   // A file on a reply: a video plays in place, an image opens in a new tab.
   function fileEl(f) {
     if (f.type === 'video') {
-      return h('figure.chat-video', {},
-        h('video', { src: f.url, controls: true, loop: true, playsInline: true, preload: 'metadata', 'aria-label': f.name }),
+      const v = h('video', { src: f.url, controls: true, loop: true, playsInline: true, preload: 'metadata', 'aria-label': f.name });
+      return h('figure.chat-video', {}, v,
         h('figcaption', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.path || 'Open video' }, f.name),
-          ...(beside ? [besideBtn(f)] : [])));
+          ...(beside ? [besideBtn(f, v)] : [])));
     }
     return h('a.chat-img', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, h('img', { src: f.url, alt: f.name, loading: 'lazy' }));
   }
