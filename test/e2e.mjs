@@ -621,6 +621,13 @@ try {
     const vt = await page.evaluate(() => document.querySelector('.beside video').currentTime);
     const shots = JSON.parse(cli('doc')).shots.length;
     if (shots === 1) ok(Math.abs(vt - 1) < 0.05, `the video follows the playhead (timeline 1 s, video ${vt.toFixed(2)} s)`);
+    // a pick that fails to load leaves the video that was showing, and picking that one again still works
+    const shownUrl = await page.evaluate(() => window.canvas.store.state.beside.url);
+    await page.evaluate(() => window.canvas.beside.show({ url: 'data:video/mp4;base64,AAAAAAAA', name: 'broken.mp4' }));
+    await page.waitForFunction((u) => document.querySelector('.beside video').src.endsWith(u) && document.querySelector('.beside video').readyState >= 1, shownUrl, { timeout: 10000 }).catch(() => null);
+    await page.evaluate((u) => { window.canvas.store.set({ view: 'free' }); window.canvas.beside.show({ url: u, name: 'again' }); }, shownUrl);
+    const back = await page.evaluate(() => ({ src: document.querySelector('.beside video').src, view: window.canvas.store.state.view, url: window.canvas.store.state.beside?.url }));
+    ok(back.src.endsWith(shownUrl) && back.view === 'shot' && back.url === shownUrl, 'a video that fails to load leaves the one showing, and picking it again brings back shot view');
     await page.click('.beside-close');
     const after = await page.evaluate(() => ({ hidden: document.querySelector('.beside').hidden, chat: !!window.canvas.store.state.chat }));
     ok(after.hidden && after.chat && (await page.isVisible('.chat')), 'closing the video brings the chat back');

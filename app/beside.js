@@ -21,24 +21,33 @@ export function mountBeside(stage) {
 
   /** Show a video beside the shot. Reads its size first so the layout can pair it with the frame. */
   let pending = null; // the url being loaded: the latest pick wins over one still loading
+  let loaded = null;  // the url the player holds now
   function show({ url, name }) {
-    if (store.state.beside?.url === url && !pending) { store.set({ view: 'shot', chat: false }); return; }
+    if (store.state.beside?.url === url && !pending && loaded === url) { store.set({ view: 'shot', chat: false }); return; }
     if (pending === url) return;
     pending = url;
     video.src = url;
     label.textContent = name || '';
     video.onloadedmetadata = () => {
       if (pending !== url) return;
-      pending = null;
+      pending = null; loaded = url;
       const aspect = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 9 / 16;
       store.set({ beside: { url, name, aspect }, view: 'shot', chat: false });
       sync(true);
     };
-    video.onerror = () => { if (pending !== url) return; pending = null; store.emit('error', `couldn't load ${name || 'the video'}`); };
+    video.onerror = () => {
+      if (pending !== url) return;
+      pending = null;
+      store.emit('error', `couldn't load ${name || 'the video'}`);
+      // keep showing the video that was there: load it again and pick up at the playhead
+      const cur = store.state.beside;
+      if (cur) { pending = cur.url; video.src = cur.url; label.textContent = cur.name || ''; video.onloadedmetadata = () => { if (pending !== cur.url) return; pending = null; loaded = cur.url; sync(true); }; video.onerror = null; video.load(); }
+    };
+    loaded = null;
     video.load();
   }
   function hide() {
-    pending = null;
+    pending = null; loaded = null;
     if (!store.state.beside) return;
     video.pause();
     video.removeAttribute('src'); video.load();
