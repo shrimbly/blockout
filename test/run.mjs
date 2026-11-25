@@ -1081,3 +1081,26 @@ test('canvas import uploads a GLB to models/, adds a model and --fit sets the sh
     assert.throws(() => cli('import', path.join(dir, 'bad.glb')), /not a GLB/);
   } finally { srv.kill(); }
 });
+
+test('save-rm deletes a save: it leaves the list, its file and thumbnail move to saved/.deleted/', async () => {
+  const os = await import('node:os');
+  const { spawn, execFileSync } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-saverm-'));
+  const port = 5393;
+  const srv = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'serve', '--scene', path.join(dir, 'scene.json'), '--port', String(port)], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) { try { await fetch(`${base}/api/status`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env: { ...process.env, CANVAS_PORT: String(port) }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    cli('save', 'keep');
+    cli('save', 'gone');
+    fs.writeFileSync(path.join(dir, 'saved', 'gone.png'), 'png');
+    assert.match(cli('save-rm', 'gone'), /deleted save "gone" .*the open scene is unchanged/);
+    assert.deepEqual((await (await fetch(`${base}/api/saves`)).json()).saves.map((x) => x.name), ['keep']);
+    const bin = fs.readdirSync(path.join(dir, 'saved', '.deleted')).sort();
+    assert.equal(bin.length, 2);
+    assert.ok(bin[0].startsWith('gone-') && bin[0].endsWith('.json') && bin[1].endsWith('.png'));
+    assert.ok(!fs.existsSync(path.join(dir, 'saved', 'gone.json')) && !fs.existsSync(path.join(dir, 'saved', 'gone.png')));
+    assert.throws(() => cli('save-rm', 'gone'), /no save "gone"/);
+  } finally { srv.kill(); }
+});

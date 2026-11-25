@@ -215,7 +215,8 @@ removes one. Never read the secrets file, echo a key or ask the user to type one
 
 ## Save / load
 
-`canvas save [name] [--overwrite]`, `canvas load <name>`, `canvas saves`. Files: `scenes/saved/<name>.json`
+`canvas save [name] [--overwrite]`, `canvas load <name>`, `canvas saves`, `canvas save-rm <name>` (moves it to
+`scenes/saved/.deleted/`; the user can also delete from the Scenes menu). Files: `scenes/saved/<name>.json`
 (plus `<name>.png` thumbnail when saved from the canvas). Names are slugged (`"Street v1"` → `street-v1`).
 
 ## HTTP
@@ -230,6 +231,7 @@ removes one. Never read the secrets file, echo a key or ask the user to type one
 | `GET /api/saves` | | `{ saves: [{ name, savedAt, objects, keys, thumb }] }` |
 | `POST /api/save` | `{ name?, overwrite? }` | `{ name, path }`; 409 if it exists |
 | `POST /api/load` | `{ name }` | `{ name, objects, keys }` (undoable) |
+| `POST /api/save/delete` | `{ name }` | `{ name, moved, current }`: the save and its thumbnail move to `saved/.deleted/` |
 | `POST /api/model?name=dancer.glb` | raw GLB bytes | `{ file, name, path, url, bytes, clips: [{ name, length }], height, meshes, skins }`: stored in the scene folder's `models/`; then add it with `{ op: 'add', type: 'model', file }` |
 | `POST /api/audio?name=song.mp3` | raw audio bytes | `{ file, name, path, url }`: stored in the scene folder's `audio/`; then set it with the `audio` op |
 | `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, export, audio) | `{ ok, result }` |
