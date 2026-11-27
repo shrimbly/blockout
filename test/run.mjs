@@ -148,6 +148,13 @@ test('migrate fills defaults and round-trips', () => {
   assert.deepEqual(migrate(JSON.parse(JSON.stringify(d))), d);
 });
 
+test('migrate drops params this version does not know instead of refusing the scene', () => {
+  const d = migrate({ objects: [{ id: 'fig', type: 'person', params: { body: 'female', wingspan: 2 } }] });
+  assert.equal(d.objects[0].params.body, 'female');
+  assert.ok(!('wingspan' in d.objects[0].params));
+  assert.throws(() => applyOps(d, { op: 'add', type: 'person', params: { wingspan: 2 } }), /no param "wingspan"/);
+});
+
 test('every primitive has a geometry builder', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app/geometry.js'), 'utf8');
   for (const t of Object.keys(PRIMITIVES)) assert.match(src, new RegExp(`\\b${t}[:(]`), t);
