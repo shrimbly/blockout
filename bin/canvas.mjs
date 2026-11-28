@@ -127,6 +127,12 @@ Render (needs the canvas tab open)
   canvas snapshot [--t 2] [--view shot|free] [--out file.png]   PNG of one frame; prints its path
           [--from x,y,z --target x,y,z [--lens 35]]           ...or from a camera of your own (the user's view is untouched)
   canvas storyboard [--frames 8] [--cols 4]                     contact sheet across the shot
+  canvas inspect <ids or prefix-> [--close id[,id]] [--t s] [--no-figure]
+                                                                 one asset on its own from 6 angles (front, back, sides,
+                                                                 3/4 high, top) + close-ups, with a 1.8 m figure; prints the
+                                                                 PNG path, its size and parts that may be floating
+  canvas review "what is wrong | …" | "no problems"            write up the last inspect pass (high detail prompts)
+  canvas review --skip "why"                                     end a high detail review without finishing it
   canvas export [--fps 24] [--width 1280 --height 720] [--grid on|off] [--name shot]
                                                                  blockout video (mp4) of the whole timeline: every shot in
                                                                  order, cut together, with the audio; prints its path
@@ -172,7 +178,7 @@ Raw / batch
 
 // ---------- helpers ----------
 // Flags that never take a value, so `say --working "text"` keeps "text" as the message.
-const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all', 'timeline', 'images', 'multi', 'optional']);
+const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all', 'timeline', 'images', 'multi', 'optional', 'no-figure']);
 
 function parseArgs(argv) {
   const pos = [], flags = {};
@@ -299,11 +305,23 @@ function shudderArg(flags) {
 }
 const keyRef = (s) => (/^\d+$/.test(s) ? { index: Number(s) } : { id: s });
 
+// Sent with every prompt the user marked "High detail", so the loop reaches the agent with the prompt itself.
+const HIGH_DETAIL = `detail: HIGH. The user switched on High detail: take your time and build a highly detailed model, then review it until it is right.
+  1. Plan before building: the real proportions and a parts list by sub-assembly (a hero asset is usually 40 to 150 primitives:
+     chamfers and trims, panel lines, handles, hinges, lights, frames, legs, small props). One id prefix for the asset, e.g. van-.
+  2. Build it one sub-assembly per canvas ops batch (helpers: skills/blockout/references/orchestration.md for big multi-part builds).
+  3. Review loop: canvas inspect <prefix> [--close <small part>] → open the PNG → canvas review "what is wrong | …" (or "no problems")
+     → fix it → inspect again. Look for floating or sunken parts, gaps, overlaps poking through, wrong scale against the 1.8 m figure,
+     missing parts, and anything that reads wrong from one side only.
+  4. The chat shows each pass on a Review card. Your final canvas say is refused until you have done at least 2 passes, written each up,
+     and the last inspect came after your last change.`;
+
 function formatPrompt(p) {
   const c = p.context || {};
   const lines = [`[canvas prompt ${p.id}] ${p.text || `(no text, see the attached ${p.images?.length ? 'images' : 'models'})`}`];
   if (p.images?.length) lines.push(`images attached (open each with your Read tool): ${p.images.map((i) => i.path).join(' | ')}`);
   if (p.models?.length) lines.push(`GLB models attached, NOT in the scene yet (add one only if the message asks, with: canvas import <path> [--pos x,y,z]): ${p.models.map((m) => `${m.name} → ${m.path}`).join(' | ')}`);
+  if (p.detail === 'high') lines.push(HIGH_DETAIL);
   if (c.selection?.length) lines.push(`selected: ${c.selection.join(' | ')}`);
   if (c.time != null) lines.push(`${c.shot ? `shot: ${c.shot}, ` : ''}playhead: ${Number(c.time).toFixed(2)}s of ${c.duration}s, view: ${c.view}${c.key ? `, key: ${c.key}` : ''}`);
   if (c.camera) lines.push(`camera: pos=${c.camera.position.map((v) => +v.toFixed(2)).join(',')} target=${c.camera.target.map((v) => +v.toFixed(2)).join(',')} fov=${+c.camera.fov.toFixed(1)}`);
@@ -731,6 +749,27 @@ const commands = {
     const r = await rpc('snapshot', { t: flags.t != null ? num(flags.t) : undefined, view: flags.view, name: flags.out ? path.basename(String(flags.out)) : undefined, width: flags.width && num(flags.width), height: flags.height && num(flags.height), shot: SHOT ?? undefined, ...own }, 60000);
     out(copyOut(r.path, flags.out));
   },
+  async inspect({ pos, flags }) {
+    const ids = pos.flatMap((x) => String(x).split(',')).map((x) => x.trim()).filter(Boolean);
+    if (!ids.length) throw new Error('usage: canvas inspect <ids or a prefix such as van-> [--close van-grille]');
+    const close = flags.close && flags.close !== true ? String(flags.close).split(',').map((x) => x.trim()).filter(Boolean) : [];
+    const r = await rpc('inspect', { ids, close, t: flags.t != null ? num(flags.t) : undefined, width: flags.width && num(flags.width), figure: flags.figure !== false, shot: SHOT ?? undefined }, 120000);
+    const lines = [copyOut(r.path, flags.out),
+      `${r.objects} objects, ${r.size.join(' × ')} m (x × y × z), lowest point y=${r.lowest}; views: ${r.views.join(', ')}`];
+    if (r.floating?.length) lines.push(`may be floating (touch nothing below them): ${r.floating.map((f) => `${f.id} (${f.gap} m up)`).join(', ')}`);
+    if (r.sunk?.length) lines.push(`below the ground: ${r.sunk.map((f) => `${f.id} (${f.depth} m down)`).join(', ')}`);
+    if (r.review) lines.push(`high detail review: this is pass ${r.review.pass} (at least ${r.review.min}). Open the PNG, then: canvas review "what is wrong | …" (or "no problems"), fix it, and inspect again.`);
+    else lines.push('open the PNG with your Read tool and check every view');
+    out(lines.join('\n'));
+  },
+  async review({ pos, flags }) {
+    const body = { reply: flags.reply && flags.reply !== true ? String(flags.reply) : undefined };
+    if (flags.skip != null) body.skip = flags.skip;
+    else body.found = pos.join(' ');
+    const r = await api('POST', '/api/review', body);
+    if (r.skipped) return out('review ended (skipped); now reply with canvas say');
+    out(`pass ${r.pass}: ${r.clean ? 'no problems' : `${r.found} to fix`}. ${r.done ? 'You can finish: canvas say --reply <id> "…"' : `Next: ${r.next}`}`);
+  },
   async storyboard({ flags }) {
     const r = await rpc('storyboard', { frames: flags.frames ? num(flags.frames) : 8, cols: flags.cols ? num(flags.cols) : 4, shot: SHOT ?? undefined }, 120000);
     out(copyOut(r.path, flags.out));
@@ -936,6 +975,11 @@ const commands = {
       // user is watching that card, and nothing else would tell them when it finishes.
       if (!r?.prompt && st.jobs) {
         const jobs = (await api('GET', '/api/jobs', undefined, { quietFail: true }))?.jobs || [];
+        const review = jobs.find((j) => j.review);
+        if (review) {
+          out({ decision: 'block', reason: `High detail review still open for canvas prompt ${review.review} (${review.passes} pass${review.passes === 1 ? '' : 'es'} so far). The user is watching its Review card. Carry on: canvas inspect <prefix> → open the PNG → canvas review "what is wrong | …" (or "no problems") → fix → inspect again, until a pass after your last change finds nothing (at least 2 passes). Then canvas say --reply ${review.review} "<what you built>". If you truly cannot finish, canvas review --skip "why" and say so.` });
+          return;
+        }
         if (jobs.length) {
           const list = jobs.map((j) => `${j.id} "${j.auto ? j.note : j.title}" (started ${Math.round((Date.now() - j.startedAt) / 60000)} min ago)`).join('; ');
           out({ decision: 'block', reason: `The canvas chat still shows you as working: ${list}. The user is watching that card and nothing else will tell them when the work finishes, so do not stop yet. Check on it now (for a render: the job's status); if it is still running, wait about 20 seconds and check again. When it has finished, save and show the result (canvas say --attach <file> "…"); if it failed or was cancelled, say why (canvas say "…"). A card you started with canvas progress also needs ending (canvas progress --id <id> --done "…" or --fail "…"); a "Working" card ends with your reply. Only then end your turn.` });

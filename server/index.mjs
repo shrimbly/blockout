@@ -136,6 +136,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     doc = next; rev++;
     persist();
     broadcast('doc', { doc, rev, source, label });
+    if (!amend) reviewDocChanged();
   }
 
   // Agents may also edit scene.json by hand: pick that up.
@@ -259,6 +260,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     p.status = 'taken'; p.takenAt = Date.now();
     savePrompts();
     broadcast('prompt', p);
+    startReview(p);
     return p;
   }
   function deliverToWaiters() {
@@ -291,7 +293,61 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   };
   const endAutoCards = () => { const now = Date.now(); for (const p of autoCards()) postProgress({ ...p, state: 'done', endedAt: now, updatedAt: now }); };
   const runningJobs = () => [...progress.values()].filter((p) => p.state === 'running' && Date.now() - (p.updatedAt || p.startedAt) < 2 * 3600000)
-    .map((p) => ({ id: p.id, title: p.title, ...(p.auto ? { auto: true, note: p.note } : {}), startedAt: p.startedAt, updatedAt: p.updatedAt || p.startedAt }));
+    .map((p) => ({ id: p.id, title: p.title, ...(p.auto ? { auto: true, note: p.note } : {}), ...(p.review ? { review: p.review.prompt, passes: p.review.passes.length } : {}), startedAt: p.startedAt, updatedAt: p.updatedAt || p.startedAt }));
+
+  // ---------- high detail: build, then review from every side until a look finds nothing ----------
+  // A prompt sent with the composer's "High detail" pill gets a Review card when the agent takes it. Each
+  // `canvas inspect` adds a pass (its sheet shows on the card), `canvas review "…"` records what the agent saw
+  // on it, and the agent's final reply is refused until there are MIN_PASSES passes, each one written up,
+  // and the last one came after the last change to the scene. The card counts as a running job, so the
+  // Stop hook will not let the session go idle half way. `canvas review --skip "why"` is the honest way out.
+  const MIN_PASSES = 2;
+  const REVIEW_STEPS = ['Plan', 'Build', 'Review', 'Done'];
+  // rev restarts at 0 with the server: an open review then needs a fresh look before it can finish
+  for (const p of progress.values()) if (p.review && p.state === 'running') { p.review.startRev = -1; for (const x of p.review.passes) x.rev = -1; }
+  const reviewCards = () => [...progress.values()].filter((p) => p.review && p.state === 'running');
+  const reviewFor = (promptId) => reviewCards().find((p) => p.review.prompt === promptId);
+  const reviewUpdate = (p, patch) => postProgress({ ...p, ...patch, review: { ...p.review, ...(patch.review || {}) }, updatedAt: Date.now() });
+  function startReview(pr) {
+    if (pr.detail !== 'high' || reviewFor(pr.id)) return;
+    endAutoCards();
+    const now = Date.now();
+    postProgress({ id: `g${now.toString(36)}${crypto.randomBytes(2).toString('hex')}`, title: 'High detail', state: 'running', steps: REVIEW_STEPS, step: 1, note: 'Planning the parts', review: { prompt: pr.id, startRev: rev, passes: [] }, startedAt: now, updatedAt: now });
+  }
+  function reviewDocChanged() {
+    for (const p of reviewCards()) {
+      const passes = p.review.passes, last = passes.at(-1);
+      const note = !last ? 'Building' : `Fixing what pass ${passes.length} found`;
+      const step = last ? 3 : 2;
+      if (note !== p.note || step !== p.step) reviewUpdate(p, { step, note });
+    }
+  }
+  function recordInspect(result) {
+    const cards = reviewCards();
+    for (const p of cards) {
+      const passes = [...p.review.passes, { n: p.review.passes.length + 1, at: Date.now(), rev, url: result.url, path: result.path, views: result.views?.length || 0, floating: result.floating?.length || 0, found: null }];
+      reviewUpdate(p, { step: 3, note: `Pass ${passes.length} · looking from ${result.views?.length || 6} angles`, review: { passes } });
+    }
+  }
+  // Why the agent may not finish this review yet, or null when it may.
+  function reviewBlock(p) {
+    const r = p.review, passes = r.passes, last = passes.at(-1);
+    if (rev === r.startRev) return null; // nothing was built or changed (a question, an answer): no review to do
+    const how = 'canvas inspect <ids or prefix> (open the PNG it prints), then canvas review "what is wrong | …" (or "no problems"), fix it, and inspect again';
+    if (passes.length < MIN_PASSES) return `high detail: ${passes.length} review pass${passes.length === 1 ? '' : 'es'} so far, at least ${MIN_PASSES} are needed. Run ${how}.`;
+    const unwritten = passes.filter((x) => !x.found).map((x) => x.n);
+    if (unwritten.length) return `high detail: write up what you saw on pass ${unwritten.join(', ')}: canvas review "what is wrong | …" (or "no problems"). Then fix it and inspect again.`;
+    if (last.rev !== rev) return `high detail: the scene changed after your last look (pass ${last.n}). Inspect again and write it up (${how}) so the last pass checks your fixes.`;
+    return null;
+  }
+  function endReview(p, note, state = 'done') {
+    const now = Date.now();
+    reviewUpdate(p, { state, step: REVIEW_STEPS.length, note, endedAt: now });
+  }
+  const reviewSummary = (p) => {
+    const passes = p.review.passes, fixes = passes.reduce((n, x) => n + (x.found?.length || 0), 0);
+    return passes.length ? `${passes.length} review pass${passes.length === 1 ? '' : 'es'} · ${fixes} fix${fixes === 1 ? '' : 'es'}` : 'No changes to review';
+  };
   function appendLog(entry) { fs.appendFileSync(logPath, JSON.stringify(entry) + '\n'); }
 
   // ---------- chat history ----------
@@ -416,13 +472,13 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     },
     'POST /api/undo': (req, res) => {
       if (!undo.length) return json(res, 200, { ok: false, error: 'nothing to undo' });
-      redo.push(doc); doc = undo.pop(); rev++; persist();
+      redo.push(doc); doc = undo.pop(); rev++; persist(); reviewDocChanged();
       broadcast('doc', { doc, rev, source: 'undo' });
       json(res, 200, { ok: true, rev });
     },
     'POST /api/redo': (req, res) => {
       if (!redo.length) return json(res, 200, { ok: false, error: 'nothing to redo' });
-      undo.push(doc); doc = redo.pop(); rev++; persist();
+      undo.push(doc); doc = redo.pop(); rev++; persist(); reviewDocChanged();
       broadcast('doc', { doc, rev, source: 'redo' });
       json(res, 200, { ok: true, rev });
     },
@@ -497,7 +553,15 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     'POST /api/rpc': async (req, res) => {
       const { method, params, timeout } = await readJson(req);
       touchAgent();
-      try { json(res, 200, { ok: true, result: await rpc(method, params, timeout || 30000) }); }
+      try {
+        const result = await rpc(method, params, timeout || 30000);
+        if (method === 'inspect' && result?.path) {
+          recordInspect(result);
+          const p = reviewCards()[0];
+          if (p) result.review = { pass: p.review.passes.length, min: MIN_PASSES };
+        }
+        json(res, 200, { ok: true, result });
+      }
       catch (e) { json(res, e.status || 500, { ok: false, error: e.message }); }
     },
     'POST /api/rpc/result': async (req, res) => {
@@ -579,7 +643,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       json(res, 200, { ok: true, ...chatFile(file, orig) });
     },
     'POST /api/prompt': async (req, res) => {
-      const { text, context, images, models } = await readJson(req);
+      const { text, context, images, models, detail } = await readJson(req);
       const imgs = (Array.isArray(images) ? images : [])
         .map((f) => path.basename(String(f?.file || f)))
         .filter((f) => fs.existsSync(path.join(uploadsDir, f)))
@@ -595,6 +659,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       const p = { id: `p${Date.now().toString(36)}`, text: String(text || '').trim(), context: context || {}, status: 'pending', at: Date.now() };
       if (imgs.length) p.images = imgs;
       if (mods.length) p.models = mods;
+      if (detail === 'high') p.detail = 'high';
       prompts.push(p); if (prompts.length > 500) prompts = prompts.slice(-500);
       savePrompts();
       broadcast('prompt', p);
@@ -689,6 +754,8 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       appendLog(entry);
       broadcast('say', entry);
       endAutoCards();
+      const rv = reply && reviewFor(reply);
+      if (rv) endReview(rv, 'Waiting for your answer');
       // Asking hands the turn to the user: the prompt it answers is no longer being worked on.
       const p = reply && prompts.find((x) => x.id === reply);
       if (p) { p.status = 'done'; p.doneAt = Date.now(); savePrompts(); broadcast('prompt', p); }
@@ -706,6 +773,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       const p = { id: `p${Date.now().toString(36)}`, text, ask: id, answers: clean, context: context || {}, status: 'pending', at: Date.now() };
       if (cancelled) p.cancelled = true;
       if (images.length) p.images = images;
+      if (prompts.find((x) => x.id === entry.reply)?.detail === 'high') p.detail = 'high'; // the answer carries on in high detail
       prompts.push(p); if (prompts.length > 500) prompts = prompts.slice(-500);
       savePrompts();
       broadcast('prompt', p);
@@ -730,13 +798,41 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       if (!chat) return json(res, 404, { ok: false, error: `no chat ${url.searchParams.get('id')} (see canvas chats)` });
       json(res, 200, { ok: true, chat });
     },
+    // ----- high detail: what the agent saw on its last inspection sheet -----
+    'POST /api/review': async (req, res) => {
+      const { found, skip, reply } = await readJson(req);
+      touchAgent();
+      const open = reviewCards();
+      const p = reply ? reviewFor(reply) : open.length === 1 ? open[0] : null;
+      if (!p) return json(res, 404, { ok: false, error: open.length ? 'several reviews are open: pass --reply <promptId>' : 'no high detail review is open (only prompts sent with "High detail" have one)' });
+      if (skip != null) {
+        const why = String(skip === true ? '' : skip).trim().slice(0, 160);
+        if (!why) return json(res, 400, { ok: false, error: 'say why you are skipping the review: canvas review --skip "why"' });
+        endReview(p, `Review skipped: ${why}`);
+        return json(res, 200, { ok: true, skipped: true });
+      }
+      const list = (Array.isArray(found) ? found : String(found ?? '').split('|')).map((x) => String(x).trim().slice(0, 140)).filter(Boolean).slice(0, 12);
+      if (!list.length) return json(res, 400, { ok: false, error: 'usage: canvas review "rear wheels float 5 cm | no door handles"   (or "no problems")' });
+      const passes = p.review.passes;
+      if (!passes.length) return json(res, 409, { ok: false, error: 'inspect first: canvas inspect <ids or prefix>, open the PNG, then write up what you saw' });
+      const clean = list.length === 1 && /^(no (problems|issues)|nothing( wrong)?|ok|looks (good|right)|all good)\.?$/i.test(list[0]);
+      const last = { ...passes.at(-1), found: clean ? [] : list, clean };
+      const next = [...passes.slice(0, -1), last];
+      reviewUpdate(p, { note: clean ? `Pass ${last.n}: no problems found` : `Pass ${last.n}: ${list.length} to fix`, review: { passes: next } });
+      const block = reviewBlock({ ...p, review: { ...p.review, passes: next } });
+      json(res, 200, { ok: true, pass: last.n, clean, found: last.found.length, done: !block, next: block });
+    },
+
     // ----- messages: agent -> canvas -----
     'POST /api/say': async (req, res) => {
       const { text, reply: replyTo, kind = 'info', done = true, files } = await readJson(req);
       touchAgent();
       // A reply without --reply answers the prompt the agent is working on, if there is exactly one.
       const taken = prompts.filter((x) => x.status === 'taken');
-      const reply = replyTo || (taken.length === 1 ? taken[0].id : undefined);
+      const open = reviewCards();
+      const reply = replyTo || (taken.length === 1 ? taken[0].id : open.length === 1 ? open[0].review.prompt : undefined);
+      const rv = kind !== 'working' && done && reply ? reviewFor(reply) : null;
+      if (rv) { const why = reviewBlock(rv); if (why) return json(res, 409, { ok: false, error: `${why} Nothing was sent to the chat.` }); }
       const entry = { from: 'agent', text: String(text || ''), reply, kind, at: Date.now() };
       const attached = (Array.isArray(files) ? files : []).map((f) => ({ file: path.basename(String(f?.file || f)), name: f?.name && path.basename(String(f.name)) }))
         .filter((f) => CHAT_FILE[path.extname(f.file).toLowerCase()] && fs.existsSync(path.join(uploadsDir, f.file))).slice(0, 8).map((f) => chatFile(f.file, f.name));
@@ -744,6 +840,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       if (!entry.text && !attached.length) return json(res, 400, { ok: false, error: 'empty message' });
       if (kind === 'working' && !attached.length && stillWorking(entry.text)) return json(res, 200, { ok: true });
       if (kind !== 'working') endAutoCards();
+      if (rv) endReview(rv, reviewSummary(rv));
       appendLog(entry);
       broadcast('say', entry);
       const p = reply && prompts.find((x) => x.id === reply);

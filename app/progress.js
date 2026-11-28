@@ -21,7 +21,9 @@ export function progressCard(m) {
   const fill = h('span.chat-prog-fill');
   const bar = h('div.chat-prog-bar', {}, fill);
   const line = h('div.chat-prog-line');
-  el.append(h('div.chat-prog-head', {}, mark, title, time), bar, line);
+  // A high detail review card also lists its passes: each inspection sheet and what the agent found on it.
+  const passes = h('div.chat-prog-passes');
+  el.append(h('div.chat-prog-head', {}, mark, title, time), bar, line, passes);
   let timer = null;
 
   // How far along: a percentage if the agent has one, else the stage it is on, else unknown.
@@ -61,9 +63,23 @@ export function progressCard(m) {
       line.hidden = false;
       el.classList.remove('is-quiet');
     }
+    renderPasses();
     clearInterval(timer); timer = null;
     tick();
     if (p.state === 'running') timer = setInterval(() => { if (!el.isConnected) { clearInterval(timer); timer = null; } else tick(); }, 1000);
+  }
+  function renderPasses() {
+    const list = p.review?.passes || [];
+    passes.hidden = !list.length;
+    // The latest pass shows its whole sheet; earlier ones shrink to a thumbnail beside what they found.
+    passes.replaceChildren(...list.map((x, i) => {
+      const latest = i === list.length - 1;
+      const sheet = x.url ? h(`a.chat-pass-sheet${latest ? '' : '.is-small'}`, { href: x.url, target: '_blank', rel: 'noopener', title: 'Open the inspection sheet' }, h('img', { src: x.url, alt: `Inspection sheet, pass ${x.n}`, loading: 'lazy' })) : null;
+      const found = x.found?.length ? h('ul.chat-pass-found', {}, ...x.found.map((f) => h('li', {}, f))) : null;
+      return h(`div.chat-pass${latest ? '' : '.is-old'}`, {},
+        h('div.chat-pass-head', {}, `Pass ${x.n}`, h('span', {}, x.found == null ? 'looking…' : x.found.length ? `${x.found.length} to fix` : 'no problems')),
+        latest ? [sheet, found] : h('div.chat-pass-row', {}, sheet, found));
+    }));
   }
   render();
   return { el, id: p.id, update(next) { p = next.progress; updatedAt = p.updatedAt || next.at; render(); } };

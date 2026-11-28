@@ -64,6 +64,27 @@ Most of the time goes into round trips, so do as much per step as you can:
   how to review. Camera, timeline, replies and `wait` always stay with you. Keep the user posted with
   `canvas say --working --reply <id> "…"` at each stage (plan, building, joining up, camera).
 
+## 2c. High detail: build it properly, then review it from every side
+
+A prompt the user sent with the composer's **High detail** pill on arrives with a `detail: HIGH` line. Take your
+time: plan the real proportions and a parts list by sub-assembly (a hero asset is often 40 to 150 primitives: trims,
+chamfers, panel lines, handles, hinges, lights, frames), give the asset one id prefix (`van-`), and build it one
+sub-assembly per `canvas ops` batch. Then review it in passes:
+
+```bash
+canvas inspect van- --close van-mirror-l   # the asset alone from 6 angles (+ close-ups), with a 1.8 m figure
+# open the PNG; read the "may be floating" / "below the ground" lines it prints
+canvas review "rear wheels float 5 cm | no door handles"   # what is wrong on this pass (or "no problems")
+# fix it in one batch, then inspect again
+```
+
+Look for floating or sunken parts, gaps, overlaps poking through, wrong scale against the figure, missing parts
+and anything that only looks wrong from one side. The chat shows each pass on a Review card. Your final
+`canvas say` is refused until you have done at least 2 passes, written each up, and the last inspect came
+after your last change; keep going until a pass finds nothing. If you truly cannot finish (no tab to render
+with), end it honestly with `canvas review --skip "why"`. `canvas inspect` works on any request too, whenever you
+want to check one object properly.
+
 ## 3. Scene conventions
 
 - Units are meters, Y is up, the ground is y = 0. Every primitive's pivot is at its **bottom centre**,

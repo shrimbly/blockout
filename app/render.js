@@ -8,6 +8,7 @@
 import { store } from './store.js';
 import { toast, h } from './ui/kit.js';
 import { audio } from './audio.js';
+import * as THREE from 'three';
 import { findShot, shotList } from '/core/doc.js';
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
@@ -68,6 +69,108 @@ export function createRenderer(viewport) {
     }
     const r = await upload(await toBlob(sheet), `storyboard-${store.doc.shots.length > 1 ? `${safeName(s.id)}-` : ''}${stamp()}.png`);
     return { path: r.path, url: r.url, times, shot: s.id };
+  }
+
+  /**
+   * canvas inspect: one asset (ids, or prefixes ending in - or *) rendered on its own, framed tight on its
+   * bounding box, from the front, back, both sides, a high 3/4 and the top, plus a close-up of each id in
+   * close. A 1.8 m figure stands beside it for scale. Returns the sheet and plain checks (size, lowest
+   * point, parts that touch nothing below them).
+   */
+  async function inspect({ ids = [], close = [], t = store.state.time, shot, width = 520, figure = true } = {}) {
+    await viewport.loaded();
+    const tl = pick(shot).timeline;
+    const all = store.doc.objects.map((o) => o.id);
+    const match = (tok) => {
+      tok = String(tok).trim();
+      if (!tok) return [];
+      if (all.includes(tok)) return [tok];
+      const pre = tok.replace(/\*$/, '');
+      return /[-*_]$/.test(tok) ? all.filter((id) => id.startsWith(pre)) : [];
+    };
+    const want = [...new Set(ids.flatMap(match))];
+    if (!want.length) throw new Error(ids.length ? `no objects match ${ids.join(', ')} (give ids, or a prefix ending in "-" such as van-)` : 'name the asset to inspect: ids, or a prefix such as van-');
+    const closeIds = close.flatMap(match);
+    const boxes = viewport.objectBoxes(t, tl);
+    const box = new THREE.Box3();
+    for (const id of want) if (boxes.get(id)) box.union(boxes.get(id));
+    if (box.isEmpty()) throw new Error('those objects have nothing to render');
+    const size = box.getSize(new THREE.Vector3());
+    const big = Math.max(size.x, size.y, size.z);
+
+    // Parts with nothing under them: above the ground, and not touching any other object below or around.
+    const floating = [];
+    for (const id of want) {
+      const b = boxes.get(id);
+      if (!b || b.min.y < 0.02) continue;
+      const probe = b.clone().expandByVector(new THREE.Vector3(0.005, 0.02, 0.005));
+      let touch = false, below = 0;
+      for (const [oid, ob] of boxes) {
+        if (oid === id) continue;
+        if (ob.intersectsBox(probe)) { touch = true; break; }
+        const overXZ = ob.max.x > b.min.x && ob.min.x < b.max.x && ob.max.z > b.min.z && ob.min.z < b.max.z;
+        if (overXZ && ob.max.y <= b.min.y) below = Math.max(below, ob.max.y);
+      }
+      if (!touch) floating.push({ id, gap: +(b.min.y - below).toFixed(3) });
+    }
+
+    const sunk = want.filter((id) => boxes.get(id)?.min.y < -0.02).map((id) => ({ id, depth: +(-boxes.get(id).min.y).toFixed(3) }));
+    const only = new Set(want);
+    const extra = [];
+    const fitBox = box.clone();
+    if (figure && big >= 0.6 && big <= 40) {
+      // at the back-left corner: beside the asset in the four side views, behind it in the 3/4 view
+      const fig = viewport.scaleFigure([box.min.x - 0.5, 0, box.min.z - 0.3]);
+      extra.push(fig);
+      fitBox.union(new THREE.Box3().setFromObject(fig));
+    }
+    const fov = 30, A = 4 / 3;
+    // Camera for direction d (from the box toward the camera), far enough that every corner is in frame.
+    const fit = (b, d, margin = 1.08) => {
+      const c = b.getCenter(new THREE.Vector3()), dir = new THREE.Vector3(...d).normalize();
+      const top = Math.abs(dir.y) > 0.99;
+      const up = top ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 1, 0);
+      const f = dir.clone().negate(), r = new THREE.Vector3().crossVectors(f, up).normalize(), u = new THREE.Vector3().crossVectors(r, f);
+      const tv = Math.tan((fov * Math.PI) / 360), th = tv * A;
+      let dist = 0.3;
+      for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
+        const p = new THREE.Vector3(x, y, z).sub(c);
+        dist = Math.max(dist, p.dot(dir) + Math.abs(p.dot(r)) / th * margin, p.dot(dir) + Math.abs(p.dot(u)) / tv * margin);
+      }
+      return { from: c.clone().addScaledVector(dir, dist).toArray(), target: c.toArray(), up: up.toArray() };
+    };
+    const views = [
+      ['front (+z)', [0, 0.06, 1]], ['back (-z)', [0, 0.06, -1]], ['side (+x)', [1, 0.06, 0]],
+      ['side (-x)', [-1, 0.06, 0]], ['3/4 high', [1, 0.8, 1.1]], ['top', [0, 1, 0]],
+    ].map(([label, d]) => ({ label, ...fit(fitBox, d) }));
+    for (const id of closeIds) {
+      const b = boxes.get(id);
+      if (b) views.push({ label: `close: ${id}`, ...fit(b.clone().expandByScalar(Math.max(0.4, b.getSize(new THREE.Vector3()).length())), [0.9, 0.6, 1], 1.1) });
+    }
+
+    const cols = 3, cw = width, ch = Math.round(width / A), gap = 6, head = 28;
+    const rows = Math.ceil(views.length / cols);
+    const sheet = h('canvas', { width: cols * cw + (cols + 1) * gap, height: head + rows * ch + (rows + 1) * gap });
+    const g = sheet.getContext('2d');
+    g.fillStyle = '#111'; g.fillRect(0, 0, sheet.width, sheet.height);
+    g.textBaseline = 'middle';
+    g.font = '13px ui-monospace, Menlo, monospace'; g.fillStyle = '#ddd';
+    const dims = `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`;
+    g.fillText(`inspect ${ids.join(' ')} · ${want.length} objects · ${dims} (x × y × z)${extra.length ? ' · figure 1.8 m' : ''}`, gap + 2, head / 2 + 2);
+    views.forEach((v, i) => {
+      const frame = viewport.renderShot(t, cw * 2, ch * 2, { from: v.from, target: v.target, up: v.up, fov, only, extra, timeline: tl });
+      const x = gap + (i % cols) * (cw + gap), y = head + gap + Math.floor(i / cols) * (ch + gap);
+      g.drawImage(frame, x, y, cw, ch);
+      g.font = '12px ui-monospace, Menlo, monospace';
+      const w = g.measureText(v.label).width + 12;
+      g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x, y, w, 20);
+      g.fillStyle = '#fff'; g.fillText(v.label, x + 6, y + 10);
+    });
+    const r = await upload(await toBlob(sheet), `inspect-${safeName(ids.join('-')).slice(0, 40)}-${stamp()}.png`);
+    return {
+      path: r.path, url: r.url, objects: want.length, ids: want, views: views.map((v) => v.label),
+      size: [size.x, size.y, size.z].map((n) => +n.toFixed(3)), lowest: +box.min.y.toFixed(3), floating, sunk,
+    };
   }
 
   /**
@@ -206,5 +309,5 @@ export function createRenderer(viewport) {
     } finally { store.set({ exporting: false }); mixCtx?.close(); }
   }
 
-  return { snapshot, storyboard, exportVideo };
+  return { snapshot, storyboard, inspect, exportVideo };
 }

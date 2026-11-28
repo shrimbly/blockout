@@ -128,6 +128,18 @@ shot A's last (hold) key.
 with the audio track mixed in; `--shot <id>` for one shot); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
 
+`inspect <ids or prefix-> [--close id[,id]] [--t s] [--width 520] [--no-figure] [--out file]` renders one asset on its own
+(everything else hidden) on one sheet: front (+z), back (-z), side (+x), side (-x), a high 3/4 and the top, each framed tight on
+its bounding box, plus a close-up per `--close` id, with a 1.8 m figure at its back-left corner for scale. A token ending in
+`-` or `*` is a prefix. Prints the PNG path, the size (x × y × z m), the lowest point, parts that touch nothing below them
+("may be floating") and parts below the ground. RPC `inspect` takes `{ ids, close?, t?, width?, figure?, shot? }`.
+
+High detail prompts (`detail: high`, the composer's "High detail" pill) get a Review card when taken. Each `inspect` adds a
+pass to it; `canvas review "problem | problem" | "no problems" [--reply <promptId>]` writes up the latest pass;
+`canvas review --skip "why"` ends the review without finishing it (the card says so). `canvas say` (final, not `--working`)
+on that prompt is refused with 409 until there are at least 2 passes, each written up, and the last came after the last
+scene change; a prompt that changed nothing needs no review. The card is a running job for the Stop hook.
+
 `canvas import <file.glb> [--name n] [--pos x,y,z] [--rot x,y,z] [--scale s] [--offset s] [--speed v] [--fit]` uploads a GLB
 (`POST /api/model`) and adds it as a `model` object, drawn with its own materials. Its first animation clip plays on the
 action time: from `offset`, at `speed`, holding its first frame before and its last frame after. `--fit` makes the active
@@ -135,6 +147,7 @@ shot as long as the clip. Move, rotate and scale it like any object (`canvas set
 In the browser, a `.glb` dropped on the canvas is uploaded and added where the camera is focused (the first upward
 surface below the aim point, else the ground). One dropped in the chat is uploaded to `models/` but not added: the prompt
 carries `models: [{ file, name, path, url }]` (`POST /api/prompt` takes `models: [{ file, name }]`, files already in `models/`).
+A prompt sent with "High detail" on carries `detail: "high"` (`POST /api/prompt` takes `detail`).
 
 `canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
@@ -234,10 +247,11 @@ removes one. Never read the secrets file, echo a key or ask the user to type one
 | `POST /api/save/delete` | `{ name }` | `{ name, moved, current }`: the save and its thumbnail move to `saved/.deleted/` |
 | `POST /api/model?name=dancer.glb` | raw GLB bytes | `{ file, name, path, url, bytes, clips: [{ name, length }], height, meshes, skins }`: stored in the scene folder's `models/`; then add it with `{ op: 'add', type: 'model', file }` |
 | `POST /api/audio?name=song.mp3` | raw audio bytes | `{ file, name, path, url }`: stored in the scene folder's `audio/`; then set it with the `audio` op |
-| `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, export, audio) | `{ ok, result }` |
+| `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, inspect, export, audio) | `{ ok, result }` |
 | `GET /api/prompt/next?wait=600` | long poll | `{ prompt }` or `{ prompt: null }` on timeout |
 | `POST /api/chat/file?name=render.mp4` | raw bytes of a video or image | `{ file, name, type, url, path }`: for `files` on `/api/say` |
-| `POST /api/say` | `{ text, reply?, done?, files?: [{ file, name? }] }` | the reply, with any attached files |
+| `POST /api/say` | `{ text, reply?, done?, files?: [{ file, name? }] }` | the reply, with any attached files; 409 while a high detail review is unfinished |
+| `POST /api/review` | `{ found: "a \| b" \| [..], reply? }` or `{ skip: "why" }` | writes up the latest inspect pass: `{ pass, clean, found, done, next }` |
 | `POST /api/ask` | `{ title?, questions, reply? }` | a question card in the chat: `{ id, questions }` |
 | `POST /api/ask/answer` | `{ id, answers, cancelled?, context? }` (sent by the tab) | the answers as a prompt: `{ prompt }`; 409 if already answered |
 | `POST /api/progress` | `{ title }` to start, then `{ id, step?, pct?, note?, eta?, steps?, state?: running\|done\|failed }` | `{ id, progress }`: one card in the chat, updated in place |
