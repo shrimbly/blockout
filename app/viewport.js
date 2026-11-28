@@ -768,13 +768,37 @@ export class Viewport {
     this.aimLine.geometry.setFromPoints([cam.position, this.targetDot.position]);
   }
 
+  // ---------- canvas inspect: bounds and a scale figure ----------
+  /** World boxes of every object at time t (tight, rotation-aware), keyed by id. */
+  objectBoxes(t, timeline = store.doc.timeline) {
+    this.poseObjects(t, timeline);
+    this.objects.updateMatrixWorld(true);
+    const out = new Map();
+    for (const [id, m] of this.meshes) {
+      if (!m.mesh.visible) continue;
+      const b = new THREE.Box3().setFromObject(m.mesh, true);
+      if (!b.isEmpty()) out.set(id, b);
+    }
+    this.poseObjects(store.state.time);
+    return out;
+  }
+  /** A plain 1.8 m person standing at pos, facing +z, for scale in an inspection sheet (not part of the scene). */
+  scaleFigure(pos) {
+    const geo = buildGeometry('person', { h: 1.8, body: 'male', detail: 'low' });
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xcfcac1, roughness: 0.92, vertexColors: !!geo.attributes.color }));
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.position.fromArray(pos);
+    mesh.updateMatrixWorld(true);
+    return mesh;
+  }
+
   // ---------- offscreen rendering (snapshots, storyboard, export) ----------
   /**
    * Render the shot camera at time t into an offscreen canvas of width × height.
    * Helpers and gizmos are hidden; the grid follows opts.grid (default: the scene setting).
    * opts.timeline renders another shot's camera and action instead of the active one.
    */
-  renderShot(t, width, height, { grid, view = 'shot', from, target, fov, timeline = store.doc.timeline } = {}) {
+  renderShot(t, width, height, { grid, view = 'shot', from, target, fov, up, only, extra, timeline = store.doc.timeline } = {}) {
     if (!this.off || this.off.w !== width || this.off.h !== height) {
       this.off?.renderer.dispose();
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
@@ -786,7 +810,7 @@ export class Viewport {
     }
     const { renderer, cam } = this.off;
     if (from && target) { // a camera of the agent's own, e.g. to check one area without touching the user's view
-      cam.position.fromArray(from); cam.up.set(0, 1, 0); cam.lookAt(...target); cam.fov = fov || 40;
+      cam.position.fromArray(from); cam.up.set(...(up || [0, 1, 0])); cam.lookAt(...target); cam.fov = fov || 40;
     } else if (view === 'free') { cam.position.copy(this.freeCam.position); cam.quaternion.copy(this.freeCam.quaternion); cam.fov = this.freeCam.fov; }
     else this.poseCamera(cam, t, null, timeline);
     cam.aspect = width / height; cam.updateProjectionMatrix();
@@ -795,9 +819,13 @@ export class Viewport {
     if (grid != null) this.grid.visible = !!grid;
     const sel = store.state.selection && this.meshes.get(store.state.selection);
     if (sel) { sel.edges.material.color.set(0x000000); sel.edges.material.opacity = 0.22; this._tint(sel, false); }
+    // only: render just these object ids (canvas inspect); extra: temporary meshes such as a scale figure
+    if (only) for (const [id, m] of this.meshes) if (!only.has(id)) { restore.push([m.mesh, m.mesh.visible]); m.mesh.visible = false; }
+    if (extra?.length) this.scene.add(...extra);
     this.poseObjects(t, timeline);
     renderer.render(this.scene, cam);
     this.poseObjects(store.state.time);
+    if (extra?.length) this.scene.remove(...extra);
     for (const [o, v] of restore) o.visible = v;
     if (sel) this._applySelection();
     return renderer.domElement;

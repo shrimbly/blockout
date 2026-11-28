@@ -1111,3 +1111,88 @@ test('save-rm deletes a save: it leaves the list, its file and thumbnail move to
     assert.throws(() => cli('save-rm', 'gone'), /no save "gone"/);
   } finally { srv.kill(); }
 });
+
+test('high detail: a Review card per prompt, and the final reply waits for written-up passes after the last change', async () => {
+  const { spawn, execFile } = await import('node:child_process');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-detail-'));
+  const port = 5394;
+  const srv = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'serve', '--scene', path.join(dir, 'scene.json'), '--port', String(port)], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) { try { await fetch(`${base}/api/status`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  // async, so the fake tab below can answer the CLI's render calls meanwhile
+  const cli = (...args) => new Promise((resolve, reject) => execFile(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env: { ...process.env, CANVAS_PORT: String(port) }, encoding: 'utf8' },
+    (err, stdout, stderr) => (err ? reject(Object.assign(new Error(stderr || err.message), { stdout })) : resolve(stdout))));
+  const post = async (route, body) => (await fetch(base + route, { method: 'POST', body: JSON.stringify(body) })).json();
+  const log = () => fs.readFileSync(path.join(dir, '.canvas', 'log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const card = () => log().filter((m) => m.kind === 'progress').at(-1).progress;
+  // a stand-in for the browser tab: answers inspect with a sheet
+  let n = 0;
+  const tab = http.get(`${base}/api/events?client=fake`, (res) => {
+    let buf = '';
+    res.on('data', (d) => {
+      buf += d;
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (!block.startsWith('event: rpc')) continue;
+        const { id, params } = JSON.parse(block.split('data: ')[1]);
+        n++;
+        post('/api/rpc/result', { id, result: { path: `/x/inspect-${n}.png`, url: `/exports/inspect-${n}.png`, objects: 2, ids: params.ids, views: ['front (+z)', 'back (-z)', 'side (+x)', 'side (-x)', '3/4 high', 'top'], size: [1, 1, 1], lowest: 0, floating: [], sunk: [] } });
+      }
+    });
+  });
+  tab.on('error', () => {});
+  try {
+    await new Promise((r) => setTimeout(r, 200));
+    const sent = await post('/api/prompt', { text: 'Build a van', detail: 'high' });
+    assert.equal(sent.prompt.detail, 'high');
+    const got = await cli('wait', '--timeout', '2', '--no-listen');
+    assert.match(got, /detail: HIGH/);
+    assert.match(got, /canvas inspect <prefix>/);
+    assert.deepEqual([card().title, card().state, card().step, card().review.prompt], ['High detail', 'running', 1, sent.prompt.id]);
+    const jobs = (await (await fetch(`${base}/api/jobs`)).json()).jobs;
+    assert.deepEqual([jobs.length, jobs[0].review], [1, sent.prompt.id]);
+
+    await cli('add', 'box', '--name', 'van-body');
+    assert.deepEqual([card().step, card().note], [2, 'Building']);
+    await assert.rejects(cli('say', 'Built the van'), /0 review passes so far, at least 2/);
+    await assert.rejects(cli('review', 'looks fine'), /inspect first/);
+    assert.match(await cli('inspect', 'van-'), /this is pass 1 \(at least 2\)/);
+    assert.deepEqual([card().step, card().review.passes.length, card().review.passes[0].url], [3, 1, '/exports/inspect-1.png']);
+    assert.match(await cli('review', 'no wheels | roof too flat'), /pass 1: 2 to fix/);
+    await cli('add', 'cylinder', '--name', 'van-wheel');
+    assert.equal(card().note, 'Fixing what pass 1 found');
+    await cli('inspect', 'van-');
+    await assert.rejects(cli('say', 'Built the van'), /write up what you saw on pass 2/);
+    await cli('review', 'no problems');
+    await cli('set', 'van-wheel', '--pos', '1,0,0');
+    await assert.rejects(cli('say', 'Built the van'), /scene changed after your last look/);
+    await cli('inspect', 'van-');
+    assert.match(await cli('review', 'no problems'), /You can finish/);
+    await cli('say', 'Built the van');
+    assert.deepEqual([card().state, card().note, card().review.passes.length], ['done', '3 review passes · 2 fixes', 3]);
+    assert.equal((await (await fetch(`${base}/api/jobs`)).json()).jobs.length, 0);
+    assert.equal(log().at(-1).text, 'Built the van');
+
+    // a high detail prompt that changes nothing (a question) needs no review; --skip ends one honestly
+    await post('/api/prompt', { text: 'How big is it?', detail: 'high' });
+    await cli('wait', '--timeout', '2', '--no-listen');
+    await cli('say', 'About 4.5 m long');
+    assert.deepEqual([card().state, card().note], ['done', 'No changes to review']);
+    await post('/api/prompt', { text: 'Add a roof rack', detail: 'high' });
+    await cli('wait', '--timeout', '2', '--no-listen');
+    await cli('add', 'box', '--name', 'van-rack');
+    await assert.rejects(cli('review', '--skip'), /say why/);
+    await cli('review', '--skip', 'no canvas tab to render with');
+    assert.deepEqual([card().state, card().note], ['done', 'Review skipped: no canvas tab to render with']);
+    await cli('say', 'Added the rack');
+    // a plain prompt gets no card
+    const cards = log().filter((m) => m.kind === 'progress').length;
+    await post('/api/prompt', { text: 'Move it left' });
+    await cli('wait', '--timeout', '2', '--no-listen');
+    await cli('set', 'van-body', '--pos', '-1,0,0');
+    await cli('say', 'Moved');
+    assert.equal(log().filter((m) => m.kind === 'progress').length, cards);
+  } finally { tab.destroy(); srv.kill(); }
+});

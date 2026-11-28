@@ -95,9 +95,21 @@ export function mountPrompt(root, { viewport, corner, beside }) {
   const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,.glb,model/gltf-binary', multiple: true, hidden: true });
   const attachBtn = h('button.cc-btn.cc-btn--ghost.cc-btn--icon.chat-attach', { type: 'button', title: 'Add images or .glb models (or paste / drop them)' }, icon('image'));
   const tray = h('div.chat-tray', { hidden: true });
+  // High detail: the agent builds a detailed model, then reviews it from every side and fixes it before replying
+  // (the server holds its reply to that). Stays on for the next messages until it is turned off.
+  const DETAIL_KEY = 'blockout.chat.highDetail';
+  let highDetail = false;
+  try { highDetail = localStorage.getItem(DETAIL_KEY) === '1'; } catch {}
+  const detailBtn = h('button.chat-detail', { type: 'button', 'aria-pressed': String(highDetail), title: 'High detail: the agent takes longer, building a detailed model and checking it from every side before it replies' }, icon('sparkle'), h('span', {}, 'High detail'));
+  detailBtn.addEventListener('click', () => {
+    highDetail = !highDetail;
+    detailBtn.setAttribute('aria-pressed', String(highDetail));
+    try { localStorage.setItem(DETAIL_KEY, highDetail ? '1' : '0'); } catch {}
+    input.focus();
+  });
   // A note above the composer when a button elsewhere started a request here (store.emit('compose', { text, hint })).
   const hint = h('div.chat-hint', { hidden: true, role: 'note' });
-  const composer = h('div.chat-composer', {}, hint, h('div.chat-input-row', {}, h('div.chat-input-col', {}, tray, input), attachBtn, send), fileInput);
+  const composer = h('div.chat-composer', {}, hint, h('div.chat-input-row', {}, h('div.chat-input-col', {}, tray, input), attachBtn, detailBtn, send), fileInput);
 
   // Past chats: "New chat" archives the conversation on the server; this view lists them and reads one back.
   const past = h('div.chat-past', { hidden: true });
@@ -227,6 +239,7 @@ export function mountPrompt(root, { viewport, corner, beside }) {
       text, context: context(),
       images: ready.filter((a) => a.kind !== 'model').map((a) => a.file),
       models: ready.filter((a) => a.kind === 'model').map((a) => ({ file: a.file, name: a.name })),
+      ...(highDetail ? { detail: 'high' } : {}),
     });
     if (!res.ok) { input.value = text; attachments = sent; renderTray(); return; }
     for (const a of sent) if (a.preview) URL.revokeObjectURL(a.preview);
@@ -289,7 +302,7 @@ export function mountPrompt(root, { viewport, corner, beside }) {
       ...(imgs.length ? [h('div.chat-imgs', {}, ...imgs)] : []),
       ...(models.length ? [h('div.chat-models', {}, ...models)] : []),
       ...(p.text ? [h('div.chat-bubble', {}, p.text)] : []),
-      ...(st ? [h('div.chat-foot', {}, st)] : []));
+      ...(p.detail === 'high' || st ? [h('div.chat-foot', {}, ...(p.detail === 'high' ? [h('span.chat-detail-tag', {}, icon('sparkle'), 'High detail')] : []), ...(st ? [st] : []))] : []));
     return el;
   }
   const newCard = (m, answered) => askCard(m, { answered, upload: uploadImage, post: (route, body) => store.post(route, body), context, onChange: () => { if (nearEnd()) scrollToEnd(); } });

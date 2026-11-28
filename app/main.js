@@ -184,6 +184,7 @@ const RPC = {
   frame: ({ id }) => { viewport.frame(id); return viewport.getPose(); },
   snapshot: (p) => renderer.snapshot(p),
   storyboard: (p) => renderer.storyboard(p),
+  inspect: (p) => renderer.inspect(p),
   export: (p) => renderer.exportVideo(p),
   // decode the audio track (recording its length); with beats, also find its tempo and onsets
   audio: async ({ beats } = {}) => {
